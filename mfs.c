@@ -1,3 +1,9 @@
+/*
+ * Name: Matt Hamrick
+ * ID: 1000433109
+ * 
+ */
+
 // The MIT License (MIT)
 // 
 // Copyright (c) 2016, 2017 Trevor Bakker 
@@ -39,6 +45,8 @@
 
 #define MAX_NUM_ARGUMENTS 5     // Mav shell only supports five arguments
 
+#define DEBUGMODE 1          // Controls whether or not to output debug/verbose logging
+
 int main()
 {
 
@@ -72,7 +80,7 @@ int main()
     // the correct amount at the end
     char *working_root = working_str;
 
-    // Tokenize the input stringswith whitespace used as the delimiter
+    // Tokenize the input strings with whitespace used as the delimiter
     while ( ( (arg_ptr = strsep(&working_str, WHITESPACE ) ) != NULL) && 
               (token_count<MAX_NUM_ARGUMENTS))
     {
@@ -84,14 +92,18 @@ int main()
         token_count++;
     }
 
-    // Now print the tokenized input as a debug check
-    // \TODO Remove this code and replace with your shell functionality
-
-    int token_index  = 0;
-    for( token_index = 0; token_index < token_count; token_index ++ ) 
+    // DO STUFF
+    
+    
+    if(DEBUGMODE)
     {
-      printf("token[%d] = %s\n", token_index, token[token_index] );  
+        int token_index  = 0;
+        for( token_index = 0; token_index < token_count; token_index ++ ) 
+        {
+          printf("token[%d] = %s\n", token_index, token[token_index] );  
+        }
     }
+
 
     free( working_root );
 

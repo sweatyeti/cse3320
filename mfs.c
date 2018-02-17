@@ -43,7 +43,7 @@
 
 #define MAX_COMMAND_SIZE 255    // The maximum command-line size
 
-#define MAX_NUM_ARGUMENTS 5     // Mav shell only supports five arguments
+#define MAX_NUM_ARGUMENTS 10     // Mav shell only supports ten arguments
 
 #define DEBUGMODE 1          // Controls whether or not to output debug/verbose logging
 
@@ -64,8 +64,8 @@ int main()
     // is no input
     while( !fgets (cmd_str, MAX_COMMAND_SIZE, stdin) );
 
-    /* Parse input */
-    char *token[MAX_NUM_ARGUMENTS];
+    // Parse input - use MAX...+1 because we need to accept 10 params PLUS the command
+    char *token[MAX_NUM_ARGUMENTS+1];
 
     int   token_count = 0;                                 
                                                            
@@ -82,7 +82,7 @@ int main()
 
     // Tokenize the input strings with whitespace used as the delimiter
     while ( ( (arg_ptr = strsep(&working_str, WHITESPACE ) ) != NULL) && 
-              (token_count<MAX_NUM_ARGUMENTS))
+              (token_count<=MAX_NUM_ARGUMENTS))
     {
       token[token_count] = strndup( arg_ptr, MAX_COMMAND_SIZE );
       if( strlen( token[token_count] ) == 0 )

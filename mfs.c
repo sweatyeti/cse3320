@@ -45,7 +45,7 @@
 
 #define MAX_NUM_ARGUMENTS 10    // Mav shell only supports ten arguments (req 9)
 
-#define DEBUGMODE 1             // Cutput debug/verbose logging if == 1
+#define DEBUGMODE 1             // Output debug/verbose logging if == 1
 
 int main()
 {
@@ -65,7 +65,7 @@ int main()
     while( !fgets (cmd_str, MAX_COMMAND_SIZE, stdin) );
 
     // Parse input - use MAX...+1 because we need to accept 10 params PLUS the command (req 9)
-    char *token[MAX_NUM_ARGUMENTS+1];
+    char *tokens[MAX_NUM_ARGUMENTS+1];
 
     int   token_count = 0;                                 
                                                            
@@ -84,10 +84,10 @@ int main()
     while ( ( (arg_ptr = strsep(&working_str, WHITESPACE ) ) != NULL) && 
               (token_count<=MAX_NUM_ARGUMENTS))
     {
-      token[token_count] = strndup( arg_ptr, MAX_COMMAND_SIZE );
-      if( strlen( token[token_count] ) == 0 )
+      tokens[token_count] = strndup( arg_ptr, MAX_COMMAND_SIZE );
+      if( strlen( tokens[token_count] ) == 0 )
       {
-        token[token_count] = NULL;
+        tokens[token_count] = NULL;
       }
         token_count++;
     }
@@ -101,18 +101,18 @@ int main()
       for( token_index = 0; token_index < token_count; token_index ++ ) 
       {
         printf("DEBUG: ");
-        printf("token[%d] = %s\n", token_index, token[token_index] );  
+        printf("token[%d] = %s\n", token_index, tokens[token_index] );  
       }
     }
 
     // if no command/text was submitted, restart the loop
-    if(token[0] == NULL)
+    if(tokens[0] == NULL)
     {
       continue;
     }
     
     // store pointer to the first token (the command) for easy retrieval later
-    char *command = token[0];
+    char *command = tokens[0];
 
     // check for quit/exit commands and break out of main loop if received (req 5)
     if(strcmp(command,"quit") == 0 || strcmp(command,"exit") == 0)
@@ -139,8 +139,12 @@ int main()
       // we're in the child process
       if(DEBUGMODE)
       {
-        printf("DEBUG: in child process after fork()\n");
+        printf("DEBUG: in child '%s' process after fork()\n", command);
       }
+      
+      //execl(getcwd(),"ls", NULL);
+      //fflush(NULL);
+      
       exit(EXIT_SUCCESS);
     }
     else
@@ -155,7 +159,16 @@ int main()
       
       if(DEBUGMODE)
       {
-        printf("DEBUG: child process %d exited with status %d\n", pid, childStatus);
+        // output status depending on how the child process exited (signal vs. normal)
+        if(WIFSIGNALED(childStatus))
+        {
+          printf("DEBUG: child process %d exited with signal status %d\n", pid, WTERMSIG(childStatus));
+        }
+        else
+        {
+          printf("DEBUG: child process %d exited with status %d\n", pid, childStatus);
+        }
+        
       }
       fflush(NULL);
     }

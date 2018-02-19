@@ -43,9 +43,9 @@
 
 #define MAX_COMMAND_SIZE 255    // The maximum command-line size
 
-#define MAX_NUM_ARGUMENTS 10     // Mav shell only supports ten arguments (req 9)
+#define MAX_NUM_ARGUMENTS 10    // Mav shell only supports ten arguments (req 9)
 
-#define DEBUGMODE 1          // Controls whether or not to output debug/verbose logging
+#define DEBUGMODE 1             // Cutput debug/verbose logging if == 1
 
 int main()
 {
@@ -97,14 +97,21 @@ int main()
     
     if(DEBUGMODE)
     {
-        int token_index  = 0;
-        for( token_index = 0; token_index < token_count; token_index ++ ) 
-        {
-          printf("token[%d] = %s\n", token_index, token[token_index] );  
-        }
+      int token_index  = 0;
+      for( token_index = 0; token_index < token_count; token_index ++ ) 
+      {
+        printf("DEBUG: ");
+        printf("token[%d] = %s\n", token_index, token[token_index] );  
+      }
     }
 
-    // store a pointer to the command (in token[0]) for easy retrieval later
+    // if no command/text was submitted, restart the loop
+    if(token[0] == NULL)
+    {
+      continue;
+    }
+    
+    // store pointer to the first token (the command) for easy retrieval later
     char *command = token[0];
 
     // check for quit/exit commands and break out of main loop if received (req 5)
@@ -112,6 +119,45 @@ int main()
     {
       free( working_root );
       break;
+    }
+    
+    pid_t pid = fork();
+    
+    if(pid == -1)
+    {
+      // the call to fork() failed if pid == -1
+      if(DEBUGMODE)
+      {
+        printf("DEBUG: call to fork() returned -1 - exiting...\n");
+        fflush(NULL);
+        break;
+      }
+      printf("An error occurred. Please try again\n");
+    }
+    else if(pid==0)
+    {
+      // we're in the child process
+      if(DEBUGMODE)
+      {
+        printf("DEBUG: in child process after fork()\n");
+      }
+      exit(EXIT_SUCCESS);
+    }
+    else
+    {
+      // we're in the parent process
+      
+      // variable to hold status of waited-on child process
+      int childStatus;
+      
+      // wait for the child process to exit or suspend
+      (void)waitpid(pid, &childStatus, 0);
+      
+      if(DEBUGMODE)
+      {
+        printf("DEBUG: child process %d exited with status %d\n", pid, childStatus);
+      }
+      fflush(NULL);
     }
 
 

@@ -104,7 +104,7 @@ int main()
         }
     }
 
-    char*[] command = token[0];
+    char[] *command = token[0];
 
     // check for quit/exit command and break out of main loop if received (req 5)
     if(strcmp(command,"quit") || strcmp(command,"exit"))

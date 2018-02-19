@@ -104,7 +104,7 @@ int main()
         }
     }
 
-    // store command for easy retrieval
+    // store a pointer to the command (in token[0]) for easy retrieval later
     char *command = token[0];
 
     // check for quit/exit commands and break out of main loop if received (req 5)

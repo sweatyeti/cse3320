@@ -43,7 +43,7 @@
 
 #define MAX_COMMAND_SIZE 255    // The maximum command-line size
 
-#define MAX_NUM_ARGUMENTS 10     // Mav shell only supports ten arguments
+#define MAX_NUM_ARGUMENTS 10     // Mav shell only supports ten arguments (req 9)
 
 #define DEBUGMODE 1          // Controls whether or not to output debug/verbose logging
 
@@ -64,7 +64,7 @@ int main()
     // is no input
     while( !fgets (cmd_str, MAX_COMMAND_SIZE, stdin) );
 
-    // Parse input - use MAX...+1 because we need to accept 10 params PLUS the command
+    // Parse input - use MAX...+1 because we need to accept 10 params PLUS the command (req 9)
     char *token[MAX_NUM_ARGUMENTS+1];
 
     int   token_count = 0;                                 
@@ -102,6 +102,15 @@ int main()
         {
           printf("token[%d] = %s\n", token_index, token[token_index] );  
         }
+    }
+
+    char[] command = token[0];
+
+    // check for quit/exit command and break out of main loop if received (req 5)
+    if(strcmp(command,"quit") || strcmp(command,"exit"))
+    {
+      free( working_root );
+      break;
     }
 
 

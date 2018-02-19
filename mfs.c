@@ -104,9 +104,10 @@ int main()
         }
     }
 
+    // store command for easy retrieval
     char *command = token[0];
 
-    // check for quit/exit command and break out of main loop if received (req 5)
+    // check for quit/exit commands and break out of main loop if received (req 5)
     if(strcmp(command,"quit") == 0 || strcmp(command,"exit") == 0)
     {
       free( working_root );

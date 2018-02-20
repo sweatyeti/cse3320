@@ -143,7 +143,8 @@ int main()
       }
       
       //execl(getcwd(),"ls", NULL);
-      //fflush(NULL);
+      execl("/bin/ls","ls",NULL);
+      fflush(NULL);
       
       exit(EXIT_SUCCESS);
     }

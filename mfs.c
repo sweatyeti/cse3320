@@ -142,10 +142,18 @@ int main()
         printf("DEBUG: in child '%s' process after fork()\n", command);
       }
       
-      //execl(getcwd(),"ls", NULL);
-      execl("/bin/ls","ls",NULL);
+      char * cwdBuf = (char *)malloc((size_t)255);
+      char * ptr;
+      ptr = getcwd(cwdBuf, 255);
+      //printf(cwdBuf);
+      
+      //char *result = malloc(strlen(cwdBuf)+strlen(s2)+1);
+      
+      execl(cwdBuf,"ls", NULL); // still not working
+      //execl("/bin/ls","ls",NULL);
       fflush(NULL);
       
+      free(ptr); // is this needed?
       exit(EXIT_SUCCESS);
     }
     else

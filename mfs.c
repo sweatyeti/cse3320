@@ -2,6 +2,15 @@
  * Name: Matt Hamrick
  * ID: 1000433109
  * 
+ * TODO:
+ *  - refactor/encapsulate main areas of code into functions
+ *  - finish implementing command history (need to do the !n functionality) (req15)
+ *  - implement signal handling in both parent and child (req7, req12)
+ *  - implement 'cd' command (req13)
+ *  - implement suspending of process using 'bg' (req8)
+ *  - change DEBUGMODE to 0 (zero) before submitting (req23)
+ *  - [opt] implement better debug logging
+ * 
  */
 
 // The MIT License (MIT)
@@ -45,7 +54,7 @@
 
 #define MAX_NUM_ARGUMENTS 10        // Mav shell only supports ten arguments (req 9)
 
-#define DEBUGMODE 1                 // Output debug/verbose logging if == 1
+#define DEBUGMODE 1                 // Output debug/verbose logging if != 0
 
 #define MAX_PID_HISTORY 10          // The number of child PIDs to keep in the history
 
@@ -56,8 +65,6 @@ int pidHistoryCount = 0;            // Global count of PID history depth
 
 char * cmdHistory[MAX_CMD_HISTORY]; // Global storage for the command history
 int cmdHistoryCount = 0;            // Global count of command history depth
-
-typedef enum { false, true } bool;  // create a bool type, just in case
 
 // function declarations
 void addCmdToHistory( char * );
@@ -378,7 +385,7 @@ void addCmdToHistory(char * cmd)
   
   if(DEBUGMODE)
   {
-    printf("DEBUG: Adding command #%d: '%s', to command history...\n", cmdHistoryCount, cmd);
+    printf("DEBUG: Adding command #%d: '%s' to command history...\n", cmdHistoryCount, cmd);
   }
   
   cmdHistory[cmdHistoryCount-1] = cmd;

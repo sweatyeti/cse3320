@@ -83,20 +83,29 @@ int main()
     while( !fgets (cmd_str, MAX_COMMAND_SIZE, stdin) );
 
     // Parse input - use MAX...+1 because we need to accept 10 params PLUS the command (req 9)
-    char *tokens[MAX_NUM_ARGUMENTS+1];
+    char * tokens[MAX_NUM_ARGUMENTS+1];
 
     int   token_count = 0;                                 
                                                            
     // Pointer to point to the token
     // parsed by strsep
-    char *arg_ptr;                                         
+    char * arg_ptr;                                         
                                                            
-    char *working_str  = strdup( cmd_str );                
+    char * working_str  = strdup( cmd_str );
+    
+    // save the raw command, removing any \r or \n chars from the end, for preservation later
+    char * rawCmd = strdup( cmd_str );
+    rawCmd[strcspn(rawCmd, "\r\n")] = 0;
+    
+    if(DEBUGMODE)
+    {
+      printf("DEBUG: raw command entered: %s\n", rawCmd);
+    }                
 
     // we are going to move the working_str pointer so
     // keep track of its original value so we can deallocate
     // the correct amount at the end
-    char *working_root = working_str;
+    char * working_root = working_str;
 
     // Tokenize the input strings with whitespace used as the delimiter
     while ( ( (arg_ptr = strsep(&working_str, WHITESPACE ) ) != NULL) && 
@@ -136,8 +145,8 @@ int main()
       break;
     }
     
-    // keep track of the command history
-    addCmdToHistory(command);
+    // keep track of the command history, using the fully-raw vegan rawCmd from earlier
+    addCmdToHistory(rawCmd);
     
     // check if the user wanted to list the command history
     if( strcmp(command, "history") == 0 )

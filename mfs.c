@@ -41,6 +41,8 @@
                                 // In this case  white space
                                 // will separate the tokens on our command line
 
+#define FWDSLASH "/"
+
 #define MAX_COMMAND_SIZE 255    // The maximum command-line size
 
 #define MAX_NUM_ARGUMENTS 10    // Mav shell only supports ten arguments (req 9)
@@ -139,29 +141,87 @@ int main()
       // we're in the child process
       if(DEBUGMODE)
       {
-        printf("DEBUG: in child '%s' process after fork()\n", command);
+        printf("DEBUG: in child process after fork()\n");
       }
       
-      char * cwdBuf = (char *)malloc((size_t)255);
+      char * cwdBuf = (char *)malloc( (size_t)255 );
       char * ptr;
       ptr = getcwd(cwdBuf, 255);
-      //printf(cwdBuf);
       
-      //char *result = malloc(strlen(cwdBuf)+strlen(s2)+1);
+      // allocate enough memory to store a string representation of the cwd+'/'+command+\0
+      char * cwdPlusCommand = (char *)malloc( strlen(cwdBuf) + strlen(command) + 2 );
       
-      execl(cwdBuf,"ls", NULL); // still not working
-      //execl("/bin/ls","ls",NULL);
+      // concatenate all the pieces noted above into cwdPlusCommand
+      strcat(cwdPlusCommand, cwdBuf);
+      strcat(cwdPlusCommand, FWDSLASH);
+      strcat(cwdPlusCommand, command);
+      
+      // prep the errno variable for the exec call
+      errno = 0;
+      
+      if(DEBUGMODE)
+      {
+        printf("DEBUG: current working directory: %s\n", cwdBuf);
+        printf("DEBUG: entered command: %s\n", command);
+        printf("DEBUG: full command to exec: %s\n", cwdPlusCommand);
+        
+        //execl(cwdPlusCommand, command, NULL);
+        execv(cwdPlusCommand, tokens);
+        
+        if(errno != 0)
+        {
+          printf("DEBUG: errno after exec: %d\n", errno);
+          printf("DEBUG: error msg: %s\n", strerror(errno));
+        }
+      }
+      else
+      {
+        //execl(cwdPlusCommand, command, NULL);
+        execv(cwdPlusCommand, tokens);
+      }
+      
+      // if errno==2 then the command was not found in this location
+      // go through the required directories to see if the command is found
+      // will reset errno back to zero each time to ensure it's fresh
+      if(errno == 2)
+      {
+        char * usrLocalBinStr = "/usr/local/bin";
+        char * usrLocalBinCmd = (char*) malloc( strlen(usrLocalBinStr) + strlen(command) + 2 );
+        strcat(usrLocalBinCmd, usrLocalBinStr);
+        strcat(usrLocalBinCmd, FWDSLASH);
+        strcat(usrLocalBinCmd, command);
+        
+        if(DEBUGMODE)
+        {
+          printf("DEBUG: attempting \"%s\" ... \n", usrLocalBinCmd);
+        }
+                
+        errno = 0;
+        execv(usrLocalBinCmd, tokens);
+        
+        if(errno != 0)
+        {
+          printf("DEBUG: errno after exec: %d\n", errno);
+          printf("DEBUG: error msg: %s\n", strerror(errno));
+        }
+      }
+      
       fflush(NULL);
-      
-      free(ptr); // is this needed?
+      free(ptr);
+      free(cwdPlusCommand);
       exit(EXIT_SUCCESS);
     }
     else
     {
       // we're in the parent process
       
-      // variable to hold status of waited-on child process
+      // variable to hold status of child process to wait on
       int childStatus;
+      
+      if(DEBUGMODE)
+      {
+        printf("DEBUG: child PID=%d\n", pid);
+      }
       
       // wait for the child process to exit or suspend
       (void)waitpid(pid, &childStatus, 0);

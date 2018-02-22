@@ -47,7 +47,7 @@
 
 #define MAX_NUM_ARGUMENTS 10    // Mav shell only supports ten arguments (req 9)
 
-#define DEBUGMODE 1             // Output debug/verbose logging if == 1
+#define DEBUGMODE 0             // Output debug/verbose logging if == 1
 
 int main()
 {
@@ -180,15 +180,14 @@ int main()
         execv(cwdPlusCommand, tokens);
       }
       
-      // if errno==2 then the command was not found in this location
-      // go through the required directories to see if the command is found
+      // if errno==2 then the command was not found in the CWD
+      // go through the other required directories to see if the command is found
       // will reset errno back to zero each time to ensure it's fresh
       if(errno == 2)
       {
-        char * usrLocalBinStr = "/usr/local/bin";
-        char * usrLocalBinCmd = (char*) malloc( strlen(usrLocalBinStr) + strlen(command) + 2 );
+        char * usrLocalBinStr = "/usr/local/bin/";
+        char * usrLocalBinCmd = (char*) malloc( strlen(usrLocalBinStr) + strlen(command) + 1 );
         strcat(usrLocalBinCmd, usrLocalBinStr);
-        strcat(usrLocalBinCmd, FWDSLASH);
         strcat(usrLocalBinCmd, command);
         
         if(DEBUGMODE)
@@ -199,11 +198,59 @@ int main()
         errno = 0;
         execv(usrLocalBinCmd, tokens);
         
-        if(errno != 0)
+        if(errno == 2)
         {
-          printf("DEBUG: errno after exec: %d\n", errno);
-          printf("DEBUG: error msg: %s\n", strerror(errno));
+          if(DEBUGMODE)
+          {
+            printf("DEBUG: errno after exec: %d\n", errno);
+            printf("DEBUG: error msg: %s\n", strerror(errno));
+          }
+          
+          char * usrBinStr = "/usr/bin/";
+          char * usrBinCmd = (char*) malloc( strlen(usrBinStr) + strlen(command) + 2 );
+          strcat(usrBinCmd, usrBinStr);
+          strcat(usrBinCmd, command);
+          
+          if(DEBUGMODE)
+          {
+            printf("DEBUG: attempting \"%s\" ... \n", usrBinCmd);
+          }
+                  
+          errno = 0;
+          execv(usrBinCmd, tokens);
+          
+          if(errno == 2)
+          {
+            if(DEBUGMODE)
+            {
+              printf("DEBUG: errno after exec: %d\n", errno);
+              printf("DEBUG: error msg: %s\n", strerror(errno));
+            }
+            
+            char * binStr = "/bin/";
+            char * binCmd = (char*) malloc( strlen(binStr) + strlen(command) + 2 );
+            strcat(binCmd, binStr);
+            strcat(binCmd, command);
+            
+            if(DEBUGMODE)
+            {
+              printf("DEBUG: attempting \"%s\" ... \n", binCmd);
+            }
+                    
+            errno = 0;
+            execv(binCmd, tokens);
+            
+            if(errno==2)
+            {
+              // inform the user that the command wasn't found (req. 2)
+              printf("%s: command not found\n", command);
+            }
+            free(binCmd);
+          }
+          
+          free(usrBinCmd);
         }
+        free(usrLocalBinCmd);
       }
       
       fflush(NULL);

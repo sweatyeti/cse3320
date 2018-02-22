@@ -36,18 +36,34 @@
 #include <string.h>
 #include <signal.h>
 
-#define WHITESPACE " \t\n"      // We want to split our command line up into tokens
-                                // so we need to define what delimits our tokens.
-                                // In this case  white space
-                                // will separate the tokens on our command line
+#define WHITESPACE " \t\n"          // We want to split our command line up into tokens
+                                    // so we need to define what delimits our tokens.
+                                    // In this case  white space
+                                    // will separate the tokens on our command line
 
-#define FWDSLASH "/"
+#define MAX_COMMAND_SIZE 255        // The maximum command-line size
 
-#define MAX_COMMAND_SIZE 255    // The maximum command-line size
+#define MAX_NUM_ARGUMENTS 10        // Mav shell only supports ten arguments (req 9)
 
-#define MAX_NUM_ARGUMENTS 10    // Mav shell only supports ten arguments (req 9)
+#define DEBUGMODE 1                 // Output debug/verbose logging if == 1
 
-#define DEBUGMODE 0             // Output debug/verbose logging if == 1
+#define MAX_PID_HISTORY 10          // The number of child PIDs to keep in the history
+
+#define MAX_CMD_HISTORY 15          // The number of commands to keep in the history
+
+int pidHistory[MAX_PID_HISTORY];    // Global storage for the PID history
+int pidHistoryCount = 0;            // Global count of PID history depth
+
+char * cmdHistory[MAX_CMD_HISTORY]; // Global storage for the command history
+int cmdHistoryCount = 0;            // Global count of command history depth
+
+typedef enum { false, true } bool;  // create a bool type, just in case
+
+// function declarations
+void addCmdToHistory( char * );
+void outputCmdHistory( void );
+void addPidToHistory( int );
+void outputPidHistory( void );
 
 int main()
 {
@@ -93,10 +109,7 @@ int main()
       }
         token_count++;
     }
-
-    // DO STUFF
-    
-    
+   
     if(DEBUGMODE)
     {
       int token_index  = 0;
@@ -117,10 +130,27 @@ int main()
     char *command = tokens[0];
 
     // check for quit/exit commands and break out of main loop if received (req 5)
-    if(strcmp(command,"quit") == 0 || strcmp(command,"exit") == 0)
+    if( strcmp(command, "quit") == 0 || strcmp(command, "exit") == 0) 
     {
       free( working_root );
       break;
+    }
+    
+    // keep track of the command history
+    addCmdToHistory(command);
+    
+    // check if the user wanted to list the command history
+    if( strcmp(command, "history") == 0 )
+    {
+      outputCmdHistory();
+      continue;
+    }
+    
+    // check if the user wanted to list the PID history
+    if( strcmp(command, "showpids") == 0 )
+    {
+      outputPidHistory();
+      continue;
     }
     
     pid_t pid = fork();
@@ -153,7 +183,8 @@ int main()
       
       // concatenate all the pieces noted above into cwdPlusCommand
       strcat(cwdPlusCommand, cwdBuf);
-      strcat(cwdPlusCommand, FWDSLASH);
+      char * fwdSlash = "/";
+      strcat(cwdPlusCommand, fwdSlash);
       strcat(cwdPlusCommand, command);
       
       // prep the errno variable for the exec call
@@ -207,7 +238,7 @@ int main()
           }
           
           char * usrBinStr = "/usr/bin/";
-          char * usrBinCmd = (char*) malloc( strlen(usrBinStr) + strlen(command) + 2 );
+          char * usrBinCmd = (char*) malloc( strlen(usrBinStr) + strlen(command) + 1 );
           strcat(usrBinCmd, usrBinStr);
           strcat(usrBinCmd, command);
           
@@ -228,7 +259,7 @@ int main()
             }
             
             char * binStr = "/bin/";
-            char * binCmd = (char*) malloc( strlen(binStr) + strlen(command) + 2 );
+            char * binCmd = (char*) malloc( strlen(binStr) + strlen(command) + 1 );
             strcat(binCmd, binStr);
             strcat(binCmd, command);
             
@@ -247,7 +278,6 @@ int main()
             }
             free(binCmd);
           }
-          
           free(usrBinCmd);
         }
         free(usrLocalBinCmd);
@@ -270,6 +300,9 @@ int main()
         printf("DEBUG: child PID=%d\n", pid);
       }
       
+      // keep track of the created child PIDs
+      addPidToHistory(pid);
+      
       // wait for the child process to exit or suspend
       (void)waitpid(pid, &childStatus, 0);
       
@@ -278,7 +311,7 @@ int main()
         // output status depending on how the child process exited (signal vs. normal)
         if(WIFSIGNALED(childStatus))
         {
-          printf("DEBUG: child process %d exited with signal status %d\n", pid, WTERMSIG(childStatus));
+          printf("DEBUG: child process %d exited with sig status %d\n", pid, WTERMSIG(childStatus));
         }
         else
         {
@@ -294,4 +327,87 @@ int main()
 
   }
   return 0;
+}
+
+void addCmdToHistory(char * cmd)
+{
+  // increment our counter from the start to ensure it matches the point at which this function is called
+  cmdHistoryCount++;
+  
+  // if the max # commands size has been reached, then get rid of the oldest one in the history (cmdHistory[0])
+  // so, if MAX_CMD_HISTORY is n, check if this is the n+1 command
+  if( cmdHistoryCount == MAX_CMD_HISTORY + 1 )
+  {
+    // Shift the char pointers one down in the array, so the 2nd oldest command now becomes the oldest
+    int i;
+    for( i = 0; i < MAX_CMD_HISTORY ; i++ )
+    {
+      cmdHistory[i] = cmdHistory[i+1];
+    }
+    
+    if(DEBUGMODE)
+    {
+      printf("DEBUG: %d commands have been entered, shifting cmdHistory array...\n", cmdHistoryCount);
+    }
+    
+    cmdHistoryCount--;
+  }
+  
+  if(DEBUGMODE)
+  {
+    printf("DEBUG: Adding command #%d: '%s', to command history...\n", cmdHistoryCount, cmd);
+  }
+  
+  cmdHistory[cmdHistoryCount-1] = cmd;
+}
+
+void outputCmdHistory()
+{
+  int i;
+  for( i = 0 ; i < cmdHistoryCount ; i++ )
+  {
+    printf("%d: %s\n", i, cmdHistory[i]);
+  }
+}
+
+void addPidToHistory(int pid)
+{
+  // increment our counter from the start to ensure it matches the point at which this function is called
+  pidHistoryCount++;
+  
+  // if the max # PIDs size has been reached, then get rid of the oldest one in the history (pidHistory[0])
+  // so, if MAX_PID_HISTORY is n, check if this is the n+1 PID
+  if( pidHistoryCount == MAX_PID_HISTORY + 1 )
+  {
+    // Shift the ints one down in the array, so the 2nd oldest PID now becomes the oldest
+    int i;
+    for( i = 0; i < MAX_PID_HISTORY ; i++ )
+    {
+      pidHistory[i] = pidHistory[i+1];
+    }
+    
+    if(DEBUGMODE)
+    {
+      printf("DEBUG: %d PIDs have been created, shifting pidHistory array...\n", pidHistoryCount);
+    }
+    
+    pidHistoryCount--;
+  }
+  
+  if(DEBUGMODE)
+  {
+    printf("DEBUG: Adding PID #%d: '%d', to PID history...\n", pidHistoryCount, pid);
+  }
+  
+  pidHistory[pidHistoryCount-1] = pid;
+}
+
+void outputPidHistory()
+{
+  int i;
+  for( i = 0; i < pidHistoryCount; i++ )
+  {
+    printf("%d: %d\n", i, pidHistory[i]);
+  }
+  
 }

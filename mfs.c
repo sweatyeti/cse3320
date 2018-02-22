@@ -338,6 +338,20 @@ int main()
   return 0;
 }
 
+/*
+ * function: 
+ *  addCmdToHistory
+ * 
+ * description: 
+ *  adds the provided command into the global command history array
+ *  encapsulates all necessary logic to keep the command history up-to-date and correct
+ * 
+ * parameters:
+ *  char * cmd: pointer to the command string
+ * 
+ * returns: 
+ *  void
+ */
 void addCmdToHistory(char * cmd)
 {
   // increment our counter from the start to ensure it matches the point at which this function is called
@@ -370,6 +384,19 @@ void addCmdToHistory(char * cmd)
   cmdHistory[cmdHistoryCount-1] = cmd;
 }
 
+/*
+ * function: 
+ *  outputCmdHistory
+ * 
+ * description: 
+ *  iterates through teh command history global array and outputs the commands
+ * 
+ * parameters:
+ *  none
+ * 
+ * returns: 
+ *  void
+ */
 void outputCmdHistory()
 {
   int i;
@@ -379,6 +406,20 @@ void outputCmdHistory()
   }
 }
 
+/*
+ * function: 
+ *  addPidToHistory
+ * 
+ * description: 
+ *  adds the provided forked child PID into the global PID history array
+ *  encapsulates all necessary logic to keep the PID history up-to-date and correct
+ * 
+ * parameters:
+ *  int pid: the PID to be saved
+ * 
+ * returns: 
+ *  void
+ */
 void addPidToHistory(int pid)
 {
   // increment our counter from the start to ensure it matches the point at which this function is called
@@ -411,6 +452,19 @@ void addPidToHistory(int pid)
   pidHistory[pidHistoryCount-1] = pid;
 }
 
+/*
+ * function: 
+ *  outputPidHistory
+ * 
+ * description: 
+ *  iterates through teh PID history global array and outputs the PIDs
+ * 
+ * parameters:
+ *  none
+ * 
+ * returns: 
+ *  void
+ */
 void outputPidHistory()
 {
   int i;

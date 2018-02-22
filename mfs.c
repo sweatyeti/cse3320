@@ -54,7 +54,7 @@
 
 #define MAX_NUM_ARGUMENTS 10        // Mav shell only supports ten arguments (req 9)
 
-#define DEBUGMODE 1                 // Output debug/verbose logging if != 0
+#define DEBUGMODE 0                 // Output debug/verbose logging if != 0
 
 #define MAX_PID_HISTORY 10          // The number of child PIDs to keep in the history
 
@@ -71,6 +71,7 @@ void addCmdToHistory( char * );
 void outputCmdHistory( void );
 void addPidToHistory( int );
 void outputPidHistory( void );
+int fetchPreviousCmd( int, char * );
 
 int main()
 {
@@ -89,20 +90,35 @@ int main()
     // is no input
     while( !fgets (cmd_str, MAX_COMMAND_SIZE, stdin) );
 
+    // save the raw command, removing any \r or \n chars from the end, for later use
+    char * rawCmd = strdup( cmd_str );
+    rawCmd[strcspn(rawCmd, "\r\n")] = 0;
+    
+    // check the first character entered to see if the user is looking to execute a command
+    // from teh command history (format is !n, where n is the place in the cmdHistory)
+    char firstCmdChar = rawCmd[0];
+    if(firstCmdChar == '!')
+    {
+      int cmdGood = 0;
+      cmdGood = fetchPreviousCmd( atoi(rawCmd+1), cmd_str );
+      
+      if( !cmdGood )
+      {
+        printf("Command not in history.\n");
+        continue;
+      }
+    }
+
     // Parse input - use MAX...+1 because we need to accept 10 params PLUS the command (req 9)
     char * tokens[MAX_NUM_ARGUMENTS+1];
 
     int   token_count = 0;                                 
-                                                           
+    
     // Pointer to point to the token
     // parsed by strsep
     char * arg_ptr;                                         
                                                            
     char * working_str  = strdup( cmd_str );
-    
-    // save the raw command, removing any \r or \n chars from the end, for preservation later
-    char * rawCmd = strdup( cmd_str );
-    rawCmd[strcspn(rawCmd, "\r\n")] = 0;
     
     if(DEBUGMODE)
     {
@@ -480,4 +496,28 @@ void outputPidHistory()
     printf("%d: %d\n", i, pidHistory[i]);
   }
   
+}
+
+int fetchPreviousCmd(int whichCmd, char * rawCmd)
+{
+  
+  if( whichCmd > cmdHistoryCount )
+  {
+    return 0;
+  }
+  
+  if(DEBUGMODE)
+  {
+    printf("DEBUG: fetching previous command #%d\n", whichCmd );
+  }
+  
+  //char * cmdToRun = (char *) malloc ( strlen( cmdHistory[whichCmd] ) );
+  //strcpy( cmdToRun, strcat( cmdHistory[whichCmd], "\0" ) );
+  
+  //*rawCmd = cmdToRun;
+  //free(cmdToRun);
+  
+  strcpy( rawCmd, strcat( cmdHistory[whichCmd], "\0" ) );
+  
+  return 1;
 }

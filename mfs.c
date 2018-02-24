@@ -4,7 +4,7 @@
  * 
  * TODO:
  *  - refactor/encapsulate main areas of code into functions
- *  - finish implementing command history (need to do the !n functionality) (req15)
+ *  - finish implementing command history (need to do the !n functionality) (req15) - done
  *  - implement signal handling in both parent and child (req7, req12)
  *  - implement 'cd' command (req13)
  *  - implement suspending of process using 'bg' (req8)
@@ -54,7 +54,7 @@
 
 #define MAX_NUM_ARGUMENTS 10        // Mav shell only supports ten arguments (req 9)
 
-#define DEBUGMODE 0                 // Output debug/verbose logging if != 0
+#define DEBUGMODE 1                 // Output debug/verbose logging if != 0
 
 #define MAX_PID_HISTORY 10          // The number of child PIDs to keep in the history
 
@@ -498,10 +498,26 @@ void outputPidHistory()
   
 }
 
+/*
+ * function: 
+ *  fetchPreviousCmd
+ * 
+ * description: 
+ *  if the user input !n, replace the original raw command with the command from the history.
+ *  checks to make sure n is valid
+ * 
+ * parameters:
+ *  int whichCmd: the integer representation of n
+ *  char * rawCmd: the raw command entered, so it can be replaced, thus allowing it 
+ *    to be re-tokenized
+ * 
+ * returns: 
+ *  int: 1 or 0 on whether or not the user input is accepted (0 if not)
+ */
 int fetchPreviousCmd(int whichCmd, char * rawCmd)
 {
   
-  if( whichCmd > cmdHistoryCount )
+  if( whichCmd > cmdHistoryCount || whichCmd < 0 )
   {
     return 0;
   }
@@ -510,12 +526,6 @@ int fetchPreviousCmd(int whichCmd, char * rawCmd)
   {
     printf("DEBUG: fetching previous command #%d\n", whichCmd );
   }
-  
-  //char * cmdToRun = (char *) malloc ( strlen( cmdHistory[whichCmd] ) );
-  //strcpy( cmdToRun, strcat( cmdHistory[whichCmd], "\0" ) );
-  
-  //*rawCmd = cmdToRun;
-  //free(cmdToRun);
   
   strcpy( rawCmd, strcat( cmdHistory[whichCmd], "\0" ) );
   

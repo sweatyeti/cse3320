@@ -66,30 +66,44 @@ int pidHistoryCount = 0;            // Global count of PID history depth
 char * cmdHistory[MAX_CMD_HISTORY]; // Global storage for the command history
 int cmdHistoryCount = 0;            // Global count of command history depth
 
-// function declarations
+typedef enum { false, true } bool;  // create a boolean type
+
+// function declarations (implementations after main())
 void addCmdToHistory( char * );
 void outputCmdHistory( void );
 void addPidToHistory( int );
 void outputPidHistory( void );
-int fetchPreviousCmd( int, char * );
+bool fetchPreviousCmd( int, char * );
 
 int main()
 {
 
   char * cmd_str = (char*) malloc( MAX_COMMAND_SIZE );
+  bool cmdFromHistory = false;
+  
+  // declare and zero-out the sigaction struct
+  struct sigaction sigAct;
+  memset (&sigAct, '\0', sizeof(sigAct) );
+  
 
   while( 1 )
   {
-    // Print out the msh prompt
-    printf ("msh> ");
+    // first check if we're re-running a previous cmd
+    // if we are, then don't display the prompt and don't ask 
+    // for input since we already have the cmd
+    if(!cmdFromHistory)
+    {
+      // Print out the msh prompt
+      printf ("msh> ");
 
-    // Read the command from the commandline.  The
-    // maximum command that will be read is MAX_COMMAND_SIZE
-    // This while command will wait here until the user
-    // inputs something since fgets returns NULL when there
-    // is no input
-    while( !fgets (cmd_str, MAX_COMMAND_SIZE, stdin) );
-
+      // Read the command from the commandline.  The
+      // maximum command that will be read is MAX_COMMAND_SIZE
+      // This while command will wait here until the user
+      // inputs something since fgets returns NULL when there
+      // is no input
+      while( !fgets (cmd_str, MAX_COMMAND_SIZE, stdin) );
+    }
+    
     // save the raw command, removing any \r or \n chars from the end, for later use
     char * rawCmd = strdup( cmd_str );
     rawCmd[strcspn(rawCmd, "\r\n")] = 0;
@@ -99,12 +113,26 @@ int main()
     char firstCmdChar = rawCmd[0];
     if(firstCmdChar == '!')
     {
-      int cmdGood = 0;
+      bool cmdGood = false;
       cmdGood = fetchPreviousCmd( atoi(rawCmd+1), cmd_str );
       
       if( !cmdGood )
       {
         printf("Command not in history.\n");
+        continue;
+      }
+      else
+      {
+        // the user didn't explicitly enter the cmd to be re-run, so don't add it to the history
+        if(!cmdFromHistory)
+        {
+          addCmdToHistory(rawCmd);
+        }
+        
+        // set the flag since we are re-running a previous cmd
+        cmdFromHistory = true;
+        
+        // start the loop over with the cmd to be re-run (skips user input)
         continue;
       }
     }
@@ -168,8 +196,15 @@ int main()
       break;
     }
     
-    // keep track of the command history, using the fully-raw vegan rawCmd from earlier
-    addCmdToHistory(rawCmd);
+    // if this command was actually entered by the user (not from the history),
+    // then add it to the history
+    if(!cmdFromHistory)
+    {
+      addCmdToHistory(rawCmd);
+    }
+    
+    // we're finished with the cmdFromHistory flag, so reset it
+    cmdFromHistory = false;
     
     // check if the user wanted to list the command history
     if( strcmp(command, "history") == 0 )
@@ -205,10 +240,15 @@ int main()
       {
         printf("DEBUG: in child process after fork()\n");
       }
+    
+      // grab and store the current working directory
+      char * cwdBuf = NULL;
+      cwdBuf = getcwd(NULL, 0);
       
-      char * cwdBuf = (char *)malloc( (size_t)255 );
-      char * ptr;
-      ptr = getcwd(cwdBuf, 255);
+      if(DEBUGMODE)
+      {
+        printf("DEBUG: current working directory: %s\n", cwdBuf);
+      }
       
       // allocate enough memory to store a string representation of the cwd+'/'+command+\0
       char * cwdPlusCommand = (char *)malloc( strlen(cwdBuf) + strlen(command) + 2 );
@@ -219,28 +259,15 @@ int main()
       strcat(cwdPlusCommand, fwdSlash);
       strcat(cwdPlusCommand, command);
       
+      free(cwdBuf);
+      
       // prep the errno variable for the exec call
       errno = 0;
-      
-      if(DEBUGMODE)
-      {
-        printf("DEBUG: current working directory: %s\n", cwdBuf);
-        printf("DEBUG: entered command: %s\n", command);
-        printf("DEBUG: full command to exec: %s\n", cwdPlusCommand);
+      execv(cwdPlusCommand, tokens);
         
-        //execl(cwdPlusCommand, command, NULL);
-        execv(cwdPlusCommand, tokens);
-        
-        if(errno != 0)
-        {
-          printf("DEBUG: errno after exec: %d\n", errno);
-          printf("DEBUG: error msg: %s\n", strerror(errno));
-        }
-      }
-      else
+      if(DEBUGMODE && errno != 0)
       {
-        //execl(cwdPlusCommand, command, NULL);
-        execv(cwdPlusCommand, tokens);
+        printf( "DEBUG: error after execv -> %d: %s\n", errno, strerror(errno) );
       }
       
       // if errno==2 then the command was not found in the CWD
@@ -316,8 +343,13 @@ int main()
       }
       
       fflush(NULL);
-      free(ptr);
       free(cwdPlusCommand);
+      
+      if(DEBUGMODE)
+      {
+        printf("DEBUG: child process exiting...\n");
+      }
+      
       exit(EXIT_SUCCESS);
     }
     else
@@ -343,7 +375,7 @@ int main()
         // output status depending on how the child process exited (signal vs. normal)
         if(WIFSIGNALED(childStatus))
         {
-          printf("DEBUG: child process %d exited with sig status %d\n", pid, WTERMSIG(childStatus));
+          printf("DEBUG: child process %d exited with sig status %d: %s\n", pid, WTERMSIG(childStatus), strsignal(WTERMSIG(childStatus)) );
         }
         else
         {
@@ -514,20 +546,24 @@ void outputPidHistory()
  * returns: 
  *  int: 1 or 0 on whether or not the user input is accepted (0 if not)
  */
-int fetchPreviousCmd(int whichCmd, char * rawCmd)
+bool fetchPreviousCmd(int cmdIndex, char * rawCmd)
 {
   
-  if( whichCmd > cmdHistoryCount || whichCmd < 0 )
+  // validate user input by checking to make sure the requested previous cmd index
+  // is within the bounds of the existing cmdHistory array
+  if( cmdIndex > cmdHistoryCount || cmdIndex < 0 )
   {
-    return 0;
+    return false;
   }
   
   if(DEBUGMODE)
   {
-    printf("DEBUG: fetching previous command #%d\n", whichCmd );
+    printf("DEBUG: fetching previous command #%d: '%s'\n", cmdIndex, cmdHistory[cmdIndex] );
   }
   
-  strcpy( rawCmd, strcat( cmdHistory[whichCmd], "\0" ) );
+  // if the cmdIndex is valid, copy the cmd from the history to the rawCmd, 
+  // which is used in the main loop for the actual cmd to run, then return
+  strcpy( rawCmd, strcat( cmdHistory[cmdIndex], "\0" ) );
   
-  return 1;
+  return true;
 }

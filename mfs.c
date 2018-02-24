@@ -66,6 +66,8 @@ int pidHistoryCount = 0;            // Global count of PID history depth
 char * cmdHistory[MAX_CMD_HISTORY]; // Global storage for the command history
 int cmdHistoryCount = 0;            // Global count of command history depth
 
+struct sigaction sigAct;            // Global sigaction for signal handling
+
 typedef enum { false, true } bool;  // create a boolean type
 
 // function declarations (implementations after main())
@@ -74,6 +76,8 @@ void outputCmdHistory( void );
 void addPidToHistory( int );
 void outputPidHistory( void );
 bool fetchPreviousCmd( int, char * );
+void setupSigHandling( void );
+void handleSignals( int );
 
 int main()
 {
@@ -81,10 +85,7 @@ int main()
   char * cmd_str = (char*) malloc( MAX_COMMAND_SIZE );
   bool cmdFromHistory = false;
   
-  // declare and zero-out the sigaction struct
-  struct sigaction sigAct;
-  memset (&sigAct, '\0', sizeof(sigAct) );
-  
+  setupSigHandling();
 
   while( 1 )
   {
@@ -132,7 +133,7 @@ int main()
         // set the flag since we are re-running a previous cmd
         cmdFromHistory = true;
         
-        // start the loop over with the cmd to be re-run (skips user input)
+        // start the loop over with the cmd to be re-run
         continue;
       }
     }
@@ -288,14 +289,13 @@ int main()
         errno = 0;
         execv(usrLocalBinCmd, tokens);
         
-        if(errno == 2)
+        if(DEBUGMODE && errno != 0)
         {
-          if(DEBUGMODE)
-          {
-            printf("DEBUG: errno after exec: %d\n", errno);
-            printf("DEBUG: error msg: %s\n", strerror(errno));
-          }
-          
+          printf( "DEBUG: error after execv -> %d: %s\n", errno, strerror(errno) );
+        }
+        
+        if(errno == 2)
+        {          
           char * usrBinStr = "/usr/bin/";
           char * usrBinCmd = (char*) malloc( strlen(usrBinStr) + strlen(command) + 1 );
           strcat(usrBinCmd, usrBinStr);
@@ -309,14 +309,13 @@ int main()
           errno = 0;
           execv(usrBinCmd, tokens);
           
+          if(DEBUGMODE && errno != 0)
+          {
+            printf( "DEBUG: error after execv -> %d: %s\n", errno, strerror(errno) );
+          }
+          
           if(errno == 2)
           {
-            if(DEBUGMODE)
-            {
-              printf("DEBUG: errno after exec: %d\n", errno);
-              printf("DEBUG: error msg: %s\n", strerror(errno));
-            }
-            
             char * binStr = "/bin/";
             char * binCmd = (char*) malloc( strlen(binStr) + strlen(command) + 1 );
             strcat(binCmd, binStr);
@@ -329,6 +328,11 @@ int main()
                     
             errno = 0;
             execv(binCmd, tokens);
+            
+            if(DEBUGMODE && errno != 0)
+            {
+              printf( "DEBUG: error after execv -> %d: %s\n", errno, strerror(errno) );
+            }
             
             if(errno==2)
             {
@@ -375,7 +379,8 @@ int main()
         // output status depending on how the child process exited (signal vs. normal)
         if(WIFSIGNALED(childStatus))
         {
-          printf("DEBUG: child process %d exited with sig status %d: %s\n", pid, WTERMSIG(childStatus), strsignal(WTERMSIG(childStatus)) );
+          printf("DEBUG: child process %d exited with", pid);
+          printf(" sig status %d: %s\n", WTERMSIG(childStatus), strsignal(WTERMSIG(childStatus)));
         }
         else
         {
@@ -566,4 +571,55 @@ bool fetchPreviousCmd(int cmdIndex, char * rawCmd)
   strcpy( rawCmd, strcat( cmdHistory[cmdIndex], "\0" ) );
   
   return true;
+}
+
+/*
+ * function: 
+ *  handleSignals
+ * 
+ * description: 
+ *  
+ * 
+ * parameters:
+ *  
+ * 
+ * returns: 
+ *  void
+ */
+void handleSignals(int sig)
+{
+  
+}
+
+/*
+ * function: 
+ *  setupSigHandling
+ * 
+ * description: 
+ *  
+ * 
+ * parameters:
+ *  
+ * 
+ * returns: 
+ *  void
+ */
+void setupSigHandling()
+{
+  // zero-out the sigaction struct
+  memset (&sigAct, '\0', sizeof(sigAct) );
+  
+  // set the sigaction handler to use the main handleSignals() function
+  sigAct.sa_handler = &handleSignals;
+  
+  // reset errno just in case there are errors with the sigaction
+  errno = 0;
+  
+  // install the handler for SIGINT
+  // output error text if debugmode is enabled if there's an issue
+  if( sigaction(SIGINT, &sigAct, NULL) != 0 && DEBUGMODE)
+  {
+    printf("ERROR -> %d: %s\n", errno, strerror(errno));
+  }
+  
 }

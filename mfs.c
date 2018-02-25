@@ -655,9 +655,16 @@ void backgroundLastProcess()
   // if it is, go ahead and send the continue (?) signal
   if ( sigqueue(pid, 0, leSigval) == 0 )
   {
+    if(DEBUGMODE)
+    {
+      printf( "DEBUG: backgroundLastProcess: bg'ing last PID %d", pid );
+    }
+    
     // PID exists, reset errno again and send the signal
     errno = 0;
     sigqueue(pid, SIGCONT, leSigval);
+    
+    parentProcess(pid);
     
     if(errno != 0 && DEBUGMODE)
     {

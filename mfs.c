@@ -13,27 +13,29 @@
  * 
  */
 
-// The MIT License (MIT)
-// 
-// Copyright (c) 2016, 2017 Trevor Bakker 
-// 
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-// 
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-// 
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
+/* The MIT License (MIT)
+ * 
+ * 
+ * Copyright (c) 2016, 2017 Trevor Bakker 
+ * 
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ * 
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ * 
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+**/
 
 #define _GNU_SOURCE
 
@@ -44,6 +46,7 @@
 #include <errno.h>
 #include <string.h>
 #include <signal.h>
+#include <stdbool.h>
 
 #define WHITESPACE " \t\n"          // We want to split our command line up into tokens
                                     // so we need to define what delimits our tokens.
@@ -54,7 +57,7 @@
 
 #define MAX_NUM_ARGUMENTS 10        // Mav shell only supports ten arguments (req 9)
 
-#define DEBUGMODE 1                 // Output debug/verbose logging if != 0
+#define DEBUGMODE true                 // Output debug/verbose logging if != 0
 
 #define MAX_PID_HISTORY 10          // The number of child PIDs to keep in the history
 
@@ -70,8 +73,6 @@ int historyLoopCounter = 0;         // Global counter to keep track of cmdHistor
                                     // this is to assist with infinite loop detection/prevention
 
 struct sigaction sigAct;            // Global sigaction for signal handling
-
-typedef enum { false, true } bool;  // create a boolean type
 
 // function declarations (implementations after main())
 void addCmdToHistory( char * );
@@ -90,7 +91,7 @@ int main()
   
   setupSigHandling();
 
-  while( 1 )
+  while( true )
   {
     // first check if we're re-running a previous cmd
     // if we are, then don't display the prompt and don't ask 
@@ -559,7 +560,7 @@ void outputPidHistory()
  * returns: 
  *  bool: true if the user input is accepted; false otherwise
  */
-bool fetchPreviousCmd(int cmdIndex, char * rawCmd)
+bool fetchPreviousCmd(int cmdIndex, char * rawCmd )
 {  
   // validate user input by checking to make sure the requested previous cmd index
   // is within the bounds of the existing cmdHistory array
@@ -652,14 +653,15 @@ void setupSigHandling()
   // reset errno just in case there are errors with the sigaction
   errno = 0;
   
-  // install the handler for SIGINT
+  // install the handler for SIGINT (req12)
   // output error text if debugmode is enabled if there's an issue
   if( sigaction(SIGINT, &sigAct, NULL) != 0 && DEBUGMODE)
   {
     printf("ERROR -> %d: %s\n", errno, strerror(errno));
   }
   
-  // install the handler for SIGTSTP
+  // install the handler for SIGTSTP (req12, req7)
+  // output error text if debugmode is enabled if there's an issue
   if( sigaction(SIGTSTP, &sigAct, NULL) != 0 && DEBUGMODE)
   {
     printf("ERROR -> %d: %s\n", errno, strerror(errno));

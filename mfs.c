@@ -140,10 +140,8 @@ int main()
           addCmdToHistory(rawCmd);
         }
         
-        // set the flag since we are re-running a previous cmd
+        // set the flag since we are re-running a previous cmd, and continue the main loop
         cmdFromHistory = true;
-        
-        // start the loop over with the cmd to be re-run
         continue;
       }
     }
@@ -450,7 +448,6 @@ void addCmdToHistory(char * cmd)
   {
     printf("DEBUG: Adding command #%d: '%s' to command history...\n", cmdHistoryCount, cmd);
   }
-  cmd[strcspn(cmd, "\r\n")] = 0;
   cmdHistory[cmdHistoryCount-1] = cmd;
 }
 
@@ -551,7 +548,8 @@ void outputPidHistory()
  * 
  * description: 
  *  if the user input !n, replace the original raw command with the command from the history.
- *  checks to make sure n is valid
+ *  checks to make sure n is valid.
+ *  also implements loop detection and prevention, and takes action if a loop is detected
  * 
  * parameters:
  *  int whichCmd: the integer representation of n
@@ -559,20 +557,19 @@ void outputPidHistory()
  *    to be re-tokenized
  * 
  * returns: 
- *  int: 1 or 0 on whether or not the user input is accepted (0 if not)
+ *  bool: true if the user input is accepted; false otherwise
  */
 bool fetchPreviousCmd(int cmdIndex, char * rawCmd)
-{
-  // keep track of how many loop iterations have occurred
-  historyLoopCounter++;
-  
+{  
   // validate user input by checking to make sure the requested previous cmd index
   // is within the bounds of the existing cmdHistory array
   if( cmdIndex >= cmdHistoryCount || cmdIndex < 0 )
   {
-    historyLoopCounter = 0;
     return false;
   }
+  
+  // keep track of how many loop iterations have occurred
+  historyLoopCounter++;
   
   if(DEBUGMODE)
   {
@@ -583,10 +580,9 @@ bool fetchPreviousCmd(int cmdIndex, char * rawCmd)
   // which is used in the main loop for the actual cmd to run, then return
   strcpy( rawCmd, strcat( cmdHistory[cmdIndex], "\0" ) );
   
-  // if the cmdIndex == n in the !n of retrieved cmd, it loops endlessly
   // if we've looped more times than there are commands in the history, we're in an infinite loop
-  // check for those conditions and intervene
-  if( (rawCmd[0] == '!' && atoi(&rawCmd[1]) == cmdIndex) || historyLoopCounter > MAX_CMD_HISTORY )
+  // check for this and intervene
+  if(historyLoopCounter > MAX_CMD_HISTORY)
   {
     printf("Infinite loop detected; invalidating command and returning to Mav shell..\n");
     rawCmd = '\0';

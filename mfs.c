@@ -339,7 +339,7 @@ int main()
             
             if(DEBUGMODE && errno != 0)
             {
-              printf( "ERROR -> after execv: %d: %s\n", errno, strerror(errno) );
+              printf( "DEBUG: after execv: %d: %s\n", errno, strerror(errno) );
             }
             
             if(errno==2)
@@ -380,19 +380,19 @@ int main()
       addPidToHistory(pid);
       
       // wait for the child process to exit or suspend
-      (void)waitpid(pid, &childStatus, 0);
+      (void)waitpid( pid, &childStatus, 0|WUNTRACED );
       
       if(DEBUGMODE)
       {
         // output status depending on how the child process exited (signal vs. normal)
         if(WIFSIGNALED(childStatus))
         {
-          printf("DEBUG: child process %d exited with unhandled", pid);
+          printf("ERROR -> child process %d exited with unhandled", pid);
           printf(" sig status %d: %s\n", WTERMSIG(childStatus), strsignal(WTERMSIG(childStatus)));
         }
         else
         {
-          printf("DEBUG: child process %d exited with status %d\n", pid, childStatus);
+          printf( "\nDEBUG: child process %d exited with status %d\n", pid, childStatus);
         }
         
       }

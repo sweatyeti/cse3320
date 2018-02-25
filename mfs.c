@@ -57,7 +57,7 @@
 
 #define MAX_NUM_ARGUMENTS 10        // Mav shell only supports ten arguments (req 9)
 
-#define DEBUGMODE true                 // Output debug/verbose logging if != 0
+#define DEBUGMODE true              // Output debug/verbose logging if true
 
 #define MAX_PID_HISTORY 10          // The number of child PIDs to keep in the history
 
@@ -230,6 +230,12 @@ int main()
       continue;
     }
     
+    // check if the user wanted to background the last process
+    if( strcmp(command, "bg") == 0 )
+    {
+      
+    }
+    
     pid_t pid = fork();
     
     if(pid == -1)
@@ -355,7 +361,7 @@ int main()
         free(usrLocalBinCmd);
       }
       
-      fflush(NULL);
+      //fflush(NULL);
       free(cwdPlusCommand);
       
       if(DEBUGMODE)
@@ -381,7 +387,7 @@ int main()
       addPidToHistory(pid);
       
       // wait for the child process to exit or suspend
-      (void)waitpid( pid, &childStatus, 0|WUNTRACED );
+      (void)waitpid( pid, &childStatus, 0 );
       
       if(DEBUGMODE)
       {
@@ -391,13 +397,20 @@ int main()
           printf("ERROR -> child process %d exited with unhandled", pid);
           printf(" sig status %d: %s\n", WTERMSIG(childStatus), strsignal(WTERMSIG(childStatus)));
         }
+        else if(WIFSTOPPED(childStatus))
+        {
+          // ctrl-z (SIGTSTP) gets here
+          printf( "DEBUG: child process %d exited with status %d ", pid, childStatus);
+          printf( "and signal %d: %s\n", WSTOPSIG(childStatus), strsignal(WSTOPSIG(childStatus)));
+        }
         else
         {
-          printf( "\nDEBUG: child process %d exited with status %d\n", pid, childStatus);
+          // ctrl-c (SIGINT) gets here
+          printf( "DEBUG: child process %d exited with status %d\n", pid, childStatus);
         }
         
       }
-      fflush(NULL);
+      //fflush(NULL);
     }
 
 
@@ -609,15 +622,19 @@ bool fetchPreviousCmd(int cmdIndex, char * rawCmd)
  */
 void handleSignals(int sig)
 {
-  switch(sig)
+  /*switch(sig)
   {
     case SIGINT:
-      printf("DEBUG: SIGINT caught\n");
+      printf("\nDEBUG: SIGINT caught\n");
       break;
       
     case SIGTSTP:
-      printf("DEBUG: SIGTSTP caught\n");
+      printf("\nDEBUG: SIGTSTP caught\n");
       break;
+    
+    //case SIGCHLD:
+      //printf("DEBUG: SIGCHLD caught\n");
+      //break;
     
     default:
       if(DEBUGMODE)
@@ -625,7 +642,7 @@ void handleSignals(int sig)
         printf("DEBUG: handleSignals(): %s signal not handled\n", strsignal(WTERMSIG(sig)));
       }
       break;
-  }
+  }*/
 }
 
 /*
@@ -648,7 +665,8 @@ void setupSigHandling()
   
   // set the sigaction handler to use the main handleSignals() function
   //sigAct.sa_handler = &handleSignals;
-  sigAct.sa_handler = SIG_IGN;
+  //sigAct.sa_handler = SIG_IGN;
+  sigAct.sa_handler = &handleSignals;
   
   // reset errno just in case there are errors with the sigaction
   errno = 0;
@@ -666,5 +684,12 @@ void setupSigHandling()
   {
     printf("ERROR -> %d: %s\n", errno, strerror(errno));
   }
+  
+  // install the handler for SIGCHLD
+  // output error text if debugmode is enabled if there's an issue
+  /*if( sigaction(SIGCHLD, &sigAct, NULL) != 0 && DEBUGMODE)
+  {
+    printf("ERROR -> %d: %s\n", errno, strerror(errno));
+  }*/
   
 }

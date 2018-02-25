@@ -81,7 +81,8 @@ void addPidToHistory( int );
 void outputPidHistory( void );
 bool fetchPreviousCmd( int, char * );
 void setupSigHandling( void );
-void handleSignals( int );
+//void handleSignals( int );
+void backgroundLastProcess ( void );
 
 int main()
 {
@@ -207,7 +208,7 @@ int main()
     }
     
     // if this command was actually entered by the user (not from the history),
-    // then add it to the history
+    // then add it to the history (req15)
     if(!cmdFromHistory)
     {
       addCmdToHistory(rawCmd);
@@ -216,24 +217,25 @@ int main()
     // we're finished with the cmdFromHistory flag, so reset it
     cmdFromHistory = false;
     
-    // check if the user wanted to list the command history
+    // check if the user wanted to list the command history (req15)
     if( strcmp(command, "history") == 0 )
     {
       outputCmdHistory();
       continue;
     }
     
-    // check if the user wanted to list the PID history
+    // check if the user wanted to list the PID history (req14)
     if( strcmp(command, "showpids") == 0 )
     {
       outputPidHistory();
       continue;
     }
     
-    // check if the user wanted to background the last process
+    // check if the user wanted to background the last process (req8)
     if( strcmp(command, "bg") == 0 )
     {
-      
+      backgroundLastProcess();
+      continue;
     }
     
     pid_t pid = fork();
@@ -387,32 +389,31 @@ int main()
       addPidToHistory(pid);
       
       // wait for the child process to exit or suspend
-      (void)waitpid( pid, &childStatus, 0 );
+      (void)waitpid( pid, &childStatus, 0|WUNTRACED );
       
       if(DEBUGMODE)
       {
         // output status depending on how the child process exited (signal vs. normal)
         if(WIFSIGNALED(childStatus))
         {
-          printf("ERROR -> child process %d exited with unhandled", pid);
+          printf("\nERROR -> child process %d exited with unhandled", pid);
           printf(" sig status %d: %s\n", WTERMSIG(childStatus), strsignal(WTERMSIG(childStatus)));
         }
         else if(WIFSTOPPED(childStatus))
         {
           // ctrl-z (SIGTSTP) gets here
-          printf( "DEBUG: child process %d exited with status %d ", pid, childStatus);
+          printf( "\nDEBUG: child process %d exited with status %d ", pid, childStatus);
           printf( "and signal %d: %s\n", WSTOPSIG(childStatus), strsignal(WSTOPSIG(childStatus)));
         }
         else
         {
           // ctrl-c (SIGINT) gets here
-          printf( "DEBUG: child process %d exited with status %d\n", pid, childStatus);
+          printf( "\nDEBUG: child process %d exited with status %d\n", pid, childStatus);
         }
         
       }
       //fflush(NULL);
     }
-
 
     free( working_root );
 
@@ -620,16 +621,16 @@ bool fetchPreviousCmd(int cmdIndex, char * rawCmd)
  * returns: 
  *  void
  */
-void handleSignals(int sig)
+/*void handleSignals(int sig)
 {
-  /*switch(sig)
+  switch(sig)
   {
     case SIGINT:
-      printf("\nDEBUG: SIGINT caught\n");
+      //printf("\nDEBUG: SIGINT caught\n");
       break;
       
     case SIGTSTP:
-      printf("\nDEBUG: SIGTSTP caught\n");
+      //printf("\nDEBUG: SIGTSTP caught\n");
       break;
     
     //case SIGCHLD:
@@ -642,18 +643,18 @@ void handleSignals(int sig)
         printf("DEBUG: handleSignals(): %s signal not handled\n", strsignal(WTERMSIG(sig)));
       }
       break;
-  }*/
-}
+  }
+}*/
 
 /*
  * function: 
  *  setupSigHandling
  * 
  * description: 
- *  
+ *  configures the process to ignore SIGINT and SIGTSTP
  * 
  * parameters:
- *  
+ *  none
  * 
  * returns: 
  *  void
@@ -663,10 +664,8 @@ void setupSigHandling()
   // zero-out the sigaction struct
   memset (&sigAct, '\0', sizeof(sigAct) );
   
-  // set the sigaction handler to use the main handleSignals() function
-  //sigAct.sa_handler = &handleSignals;
-  //sigAct.sa_handler = SIG_IGN;
-  sigAct.sa_handler = &handleSignals;
+  // set the sigaction handler to ignore SIGTSTP and SIGINT
+  sigAct.sa_handler = SIG_IGN;
   
   // reset errno just in case there are errors with the sigaction
   errno = 0;
@@ -678,7 +677,7 @@ void setupSigHandling()
     printf("ERROR -> %d: %s\n", errno, strerror(errno));
   }
   
-  // install the handler for SIGTSTP (req12, req7)
+  // install the handler for SIGTSTP (req12)
   // output error text if debugmode is enabled if there's an issue
   if( sigaction(SIGTSTP, &sigAct, NULL) != 0 && DEBUGMODE)
   {
@@ -692,4 +691,57 @@ void setupSigHandling()
     printf("ERROR -> %d: %s\n", errno, strerror(errno));
   }*/
   
+}
+
+/*
+ * function: 
+ *  backgroundLastProcess
+ * 
+ * description: 
+ *  will sent the SIGCONT signal to the last PID to be run, if it exists
+ * 
+ * parameters:
+ *  none
+ * 
+ * returns: 
+ *  void
+ */
+void backgroundLastProcess()
+{
+  // check to make sure there is at least one PID in the history, return otherwise
+  if( pidHistoryCount < 1 ) return;
+  
+  // retrieve the last created PID
+  int pid = pidHistory[pidHistoryCount-1];
+  
+  // simple check to make sure we have a PID > 0 - return otherwise
+  if( pid <= 0 ) return; 
+  
+  // reset errno for debugging purposes
+  errno = 0;
+  
+  // build the sigval for sigqueue, providing the answer to the Ultimate Question of Life, etc.
+  union sigval leSigval;
+  leSigval.sival_int = 42; 
+  
+  // check if the desired process is still alive by sending the null signal (0) to it
+  // if it is, go ahead and send the continue (?) signal
+  if ( sigqueue(pid, 0, leSigval) == 0 )
+  {
+    // PID exists, reset errno again and send the signal
+    errno = 0;
+    sigqueue(pid, SIGCONT, leSigval);
+    
+    if(errno != 0 && DEBUGMODE)
+    {
+      printf( "DEBUG: backgroundLastProcess: errno after sigqueue = %d: %s\n", errno, strerror(errno) );
+    }
+  }
+  else
+  {
+    if(DEBUGMODE)
+    {
+      printf( "DEBUG: backgroundLastProcess: errno after null sigqueue = %d: %s\n", errno, strerror(errno) );
+    }
+  }
 }

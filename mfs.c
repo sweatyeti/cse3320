@@ -111,19 +111,22 @@ int main()
     
     // check the first character entered to see if the user is looking to execute a command
     // from teh command history (format is !n, where n is the place in the cmdHistory)
-    char firstCmdChar = rawCmd[0];
-    if(firstCmdChar == '!')
+    if(rawCmd[0] == '!')
     {
+      // create a flag and fetch the previous command
       bool cmdGood = false;
       cmdGood = fetchPreviousCmd( atoi(rawCmd+1), cmd_str );
       
+      // if the cmd entered is not good, inform the user and reset
       if( !cmdGood )
       {
         printf("Command not in history.\n");
+        cmdFromHistory = false;
         continue;
       }
       else
       {
+        // the request to re-run a previous command was good
         // the user didn't explicitly enter the cmd to be re-run, so don't add it to the history
         if(!cmdFromHistory)
         {
@@ -268,7 +271,7 @@ int main()
         
       if(DEBUGMODE && errno != 0)
       {
-        printf( "DEBUG: error after execv -> %d: %s\n", errno, strerror(errno) );
+        printf( "ERROR -> after execv -> %d: %s\n", errno, strerror(errno) );
       }
       
       // if errno==2 then the command was not found in the CWD
@@ -291,7 +294,7 @@ int main()
         
         if(DEBUGMODE && errno != 0)
         {
-          printf( "DEBUG: error after execv -> %d: %s\n", errno, strerror(errno) );
+          printf( "ERROR -> after execv: %d: %s\n", errno, strerror(errno) );
         }
         
         if(errno == 2)
@@ -311,7 +314,7 @@ int main()
           
           if(DEBUGMODE && errno != 0)
           {
-            printf( "DEBUG: error after execv -> %d: %s\n", errno, strerror(errno) );
+            printf( "ERROR -> after execv:%d: %s\n", errno, strerror(errno) );
           }
           
           if(errno == 2)
@@ -331,7 +334,7 @@ int main()
             
             if(DEBUGMODE && errno != 0)
             {
-              printf( "DEBUG: error after execv -> %d: %s\n", errno, strerror(errno) );
+              printf( "ERROR -> after execv: %d: %s\n", errno, strerror(errno) );
             }
             
             if(errno==2)
@@ -379,7 +382,7 @@ int main()
         // output status depending on how the child process exited (signal vs. normal)
         if(WIFSIGNALED(childStatus))
         {
-          printf("DEBUG: child process %d exited with", pid);
+          printf("DEBUG: child process %d exited with unhandled", pid);
           printf(" sig status %d: %s\n", WTERMSIG(childStatus), strsignal(WTERMSIG(childStatus)));
         }
         else
@@ -556,7 +559,7 @@ bool fetchPreviousCmd(int cmdIndex, char * rawCmd)
   
   // validate user input by checking to make sure the requested previous cmd index
   // is within the bounds of the existing cmdHistory array
-  if( cmdIndex > cmdHistoryCount || cmdIndex < 0 )
+  if( cmdIndex >= cmdHistoryCount || cmdIndex < 0 )
   {
     return false;
   }
@@ -569,6 +572,15 @@ bool fetchPreviousCmd(int cmdIndex, char * rawCmd)
   // if the cmdIndex is valid, copy the cmd from the history to the rawCmd, 
   // which is used in the main loop for the actual cmd to run, then return
   strcpy( rawCmd, strcat( cmdHistory[cmdIndex], "\0" ) );
+  
+  // if the cmdIndex == n in the !n of retrieved cmd, it loops endlessly
+  // check for that condition 
+  if(rawCmd[0] == '!' && atoi(&rawCmd[1]) == cmdIndex)
+  {
+    printf("Infinite loop prevented; invalidating command and returning to Mav shell..\n");
+    rawCmd = '\0';
+    return false;
+  }
   
   return true;
 }
@@ -588,7 +600,23 @@ bool fetchPreviousCmd(int cmdIndex, char * rawCmd)
  */
 void handleSignals(int sig)
 {
-  
+  switch(sig)
+  {
+    case SIGINT:
+      printf("DEBUG: SIGINT caught\n");
+      break;
+      
+    case SIGTSTP:
+      printf("DEBUG: SIGTSTP caught\n");
+      break;
+    
+    default:
+      if(DEBUGMODE)
+      {
+        printf("DEBUG: handleSignals(): %s signal not handled\n", strsignal(WTERMSIG(sig)));
+      }
+      break;
+  }
 }
 
 /*
@@ -610,7 +638,8 @@ void setupSigHandling()
   memset (&sigAct, '\0', sizeof(sigAct) );
   
   // set the sigaction handler to use the main handleSignals() function
-  sigAct.sa_handler = &handleSignals;
+  //sigAct.sa_handler = &handleSignals;
+  sigAct.sa_handler = SIG_IGN;
   
   // reset errno just in case there are errors with the sigaction
   errno = 0;
@@ -618,6 +647,12 @@ void setupSigHandling()
   // install the handler for SIGINT
   // output error text if debugmode is enabled if there's an issue
   if( sigaction(SIGINT, &sigAct, NULL) != 0 && DEBUGMODE)
+  {
+    printf("ERROR -> %d: %s\n", errno, strerror(errno));
+  }
+  
+  // install the handler for SIGTSTP
+  if( sigaction(SIGTSTP, &sigAct, NULL) != 0 && DEBUGMODE)
   {
     printf("ERROR -> %d: %s\n", errno, strerror(errno));
   }

@@ -560,7 +560,7 @@ void outputPidHistory()
  * returns: 
  *  bool: true if the user input is accepted; false otherwise
  */
-bool fetchPreviousCmd(int cmdIndex, char * rawCmd )
+bool fetchPreviousCmd(int cmdIndex, char * rawCmd)
 {  
   // validate user input by checking to make sure the requested previous cmd index
   // is within the bounds of the existing cmdHistory array

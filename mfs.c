@@ -277,11 +277,6 @@ int main()
       // allocate enough memory to store a string representation of the cwd+'/'+command+\0
       char * cwdPlusCommand = (char *)malloc( strlen(cwdBuf) + strlen(command) + 2 );
       
-      if(DEBUGMODE)
-      {
-        printf("here: malloc: %d\n", strlen(cwdPlusCommand) );
-      }
-      
       // concatenate all the pieces noted above into cwdPlusCommand
       strcat(cwdPlusCommand, cwdBuf);
       char * fwdSlash = "/";

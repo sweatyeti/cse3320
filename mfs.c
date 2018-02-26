@@ -3,10 +3,8 @@
  * ID: 1000433109
  * 
  * TODO:
- *  - refactor/encapsulate main areas of code into functions
+ *  - [opt] refactor/encapsulate main areas of code into functions
  *     - move all checking for handled commands to a single function
- *  - implement 'cd' command (req13)
- *  - change DEBUGMODE to 0 (zero) before submitting (req23)
  *  - [opt] implement better debug logging
  * 
  */
@@ -55,7 +53,7 @@
 
 #define MAX_NUM_ARGUMENTS 10        // Mav shell only supports ten arguments (req 9)
 
-#define DEBUGMODE true              // Output debug/verbose logging if true
+#define DEBUGMODE false              // Output debug/verbose logging if true
 
 #define MAX_PID_HISTORY 10          // The number of child PIDs to keep in the history
 
@@ -272,10 +270,17 @@ int main()
       if(DEBUGMODE)
       {
         printf("DEBUG: current working directory: %s\n", cwdBuf);
+        printf("strlen(cwdBuf) = %d\n", strlen(cwdBuf));
+        printf("strlen(command) = %d\n", strlen(command));
       }
       
       // allocate enough memory to store a string representation of the cwd+'/'+command+\0
       char * cwdPlusCommand = (char *)malloc( strlen(cwdBuf) + strlen(command) + 2 );
+      
+      if(DEBUGMODE)
+      {
+        printf("here: malloc: %d\n", strlen(cwdPlusCommand) );
+      }
       
       // concatenate all the pieces noted above into cwdPlusCommand
       strcat(cwdPlusCommand, cwdBuf);
@@ -362,15 +367,12 @@ int main()
               // inform the user that the command wasn't found (req. 2)
               printf("%s: command not found\n", command);
             }
-            free(binCmd);
           }
-          free(usrBinCmd);
         }
-        free(usrLocalBinCmd);
       }
       
       //fflush(NULL);
-      free(cwdPlusCommand);
+      //free(cwdPlusCommand);
       
       if(DEBUGMODE)
       {
@@ -753,7 +755,8 @@ void parentProcess(int childPid, bool addChildPidToHistory)
  *  handles the 'cd' command (change working directory)
  * 
  * parameters:
- *  none
+ *  char * cmdParam: cd only takes one parameter, so this param
+ *                   will either be that param, or NULL
  * 
  * returns: 
  *  void
@@ -777,8 +780,10 @@ void handleCd(char * cmdParam)
     
     // build the new cwd based on what the user entered
     strcpy(newCwd, cwd);
-    char * fwdSlash = "/";
-    strcat(newCwd, fwdSlash);
+    //char * fwdSlash = "/";
+    newCwd[strlen(newCwd)] = '/';
+    newCwd[strlen(newCwd)] = '\0';
+    //strcat(newCwd, fwdSlash);
     strcat(newCwd, cmdParam);
     
     if(DEBUGMODE)
@@ -789,15 +794,11 @@ void handleCd(char * cmdParam)
     // reset errno, as chdir can change it
     errno = 0;
     
-    if( chdir(newCwd) == 0 )
+    if( chdir(newCwd) != 0 && DEBUGMODE )
     {
-      printf("DEBUG: handleCd() -> new cwd = %s\n", getcwd(NULL, 0) );
+      printf("DEBUG: handleCc() -> after chdir: %d: %s\n", errno, strerror(errno));
     }
-    else
-    {
-      printf("%d: %s\n", errno, strerror(errno));
-    }
-    
+
     free(newCwd);
   }
   else
@@ -805,5 +806,5 @@ void handleCd(char * cmdParam)
     printf("%s\n", cwd);
   }
   
-  free(cwd);
+  //free(cwd);
 }

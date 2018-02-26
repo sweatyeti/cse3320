@@ -270,8 +270,8 @@ int main()
       if(DEBUGMODE)
       {
         printf("DEBUG: current working directory: %s\n", cwdBuf);
-        printf("strlen(cwdBuf) = %d\n", strlen(cwdBuf));
-        printf("strlen(command) = %d\n", strlen(command));
+        //printf("strlen(cwdBuf) = %d\n", strlen(cwdBuf));
+        //printf("strlen(command) = %d\n", strlen(command));
       }
       
       // allocate enough memory to store a string representation of the cwd+'/'+command+\0

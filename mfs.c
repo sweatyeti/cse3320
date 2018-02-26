@@ -4,10 +4,8 @@
  * 
  * TODO:
  *  - refactor/encapsulate main areas of code into functions
- *  - finish implementing command history (need to do the !n functionality) (req15) - done
- *  - implement signal handling in both parent and child (req7, req12)
+ *     - move all checking for handled commands to a single function
  *  - implement 'cd' command (req13)
- *  - implement suspending of process using 'bg' (req8)
  *  - change DEBUGMODE to 0 (zero) before submitting (req23)
  *  - [opt] implement better debug logging
  * 
@@ -83,6 +81,7 @@ bool fetchPreviousCmd( int, char * );
 void setupSigHandling( void );
 void backgroundLastProcess( void );
 void parentProcess( int, bool );
+void handleCd( void );
 
 int main()
 {
@@ -235,6 +234,13 @@ int main()
     if( strcmp(command, "bg") == 0 )
     {
       backgroundLastProcess();
+      continue;
+    }
+    
+    // check if the user is trying to change directories (req13)
+    if( strcmp(command, "cd") == 0 )
+    {
+      handleCd();
       continue;
     }
     
@@ -682,13 +688,16 @@ void backgroundLastProcess()
 
 /*
  * function: 
- *  backgroundLastProcess
+ *  parentProcess
  * 
  * description: 
- *  will sent the SIGCONT signal to the last PID to be run, if it exists
+ *  after fork(), handles all the parent process duties:
+ *   - add the child PID to the history, if appropriate
+ *   - wait for the child PID
  * 
  * parameters:
- *  none
+ *  - int childPid: the child PID from fork()
+ *  - bool addChildPidToHistory: if true, the child PID will be added to the pidHistory
  * 
  * returns: 
  *  void
@@ -734,4 +743,29 @@ void parentProcess(int childPid, bool addChildPidToHistory)
     
   }
   //fflush(NULL);
+}
+
+/*
+ * function: 
+ *  handleCd
+ * 
+ * description: 
+ *  handles the 'cd' command (change working directory)
+ * 
+ * parameters:
+ *  none
+ * 
+ * returns: 
+ *  void
+ */
+void handleCd()
+{
+  // grab and store the current working directory
+  char * cwdBuf = NULL;
+  cwdBuf = getcwd(NULL, 0);
+  
+  if(DEBUGMODE)
+  {
+    printf("DEBUG: handleCd -> cwd: %s\n", cwdBuf);
+  }
 }

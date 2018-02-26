@@ -81,7 +81,7 @@ bool fetchPreviousCmd( int, char * );
 void setupSigHandling( void );
 void backgroundLastProcess( void );
 void parentProcess( int, bool );
-void handleCd( void );
+void handleCd( char * );
 
 int main()
 {
@@ -240,7 +240,7 @@ int main()
     // check if the user is trying to change directories (req13)
     if( strcmp(command, "cd") == 0 )
     {
-      handleCd();
+      handleCd(tokens[1]);
       continue;
     }
     
@@ -631,7 +631,7 @@ void setupSigHandling()
  *  backgroundLastProcess
  * 
  * description: 
- *  will sent the SIGCONT signal to the last PID to be run, if it exists
+ *  will send the SIGCONT signal to the last PID to be run, if it exists
  * 
  * parameters:
  *  none
@@ -758,14 +758,52 @@ void parentProcess(int childPid, bool addChildPidToHistory)
  * returns: 
  *  void
  */
-void handleCd()
+void handleCd(char * cmdParam)
 {
   // grab and store the current working directory
-  char * cwdBuf = NULL;
-  cwdBuf = getcwd(NULL, 0);
+  char * cwd = NULL;
+  cwd = getcwd(NULL, 0);
   
   if(DEBUGMODE)
   {
-    printf("DEBUG: handleCd -> cwd: %s\n", cwdBuf);
+    printf("DEBUG: handleCd() -> cwd: %s\n", cwd);
   }
+  
+  if(cmdParam != NULL)
+  {
+    // allocate enough memory to hold the cwd plus the parameter 
+    // entered by the user, plus the '/' and terminating null
+    char * newCwd = (char*) malloc( strlen(cwd) + strlen(cmdParam) + 2 );
+    
+    // build the new cwd based on what the user entered
+    strcpy(newCwd, cwd);
+    char * fwdSlash = "/";
+    strcat(newCwd, fwdSlash);
+    strcat(newCwd, cmdParam);
+    
+    if(DEBUGMODE)
+    {
+      printf("DEBUG: handleCd() -> proposed cwd = %s\n", newCwd);
+    }
+    
+    // reset errno, as chdir can change it
+    errno = 0;
+    
+    if( chdir(newCwd) == 0 )
+    {
+      printf("DEBUG: handleCd() -> new cwd = %s\n", getcwd(NULL, 0) );
+    }
+    else
+    {
+      printf("%d: %s\n", errno, strerror(errno));
+    }
+    
+    free(newCwd);
+  }
+  else
+  {
+    printf("%s\n", cwd);
+  }
+  
+  free(cwd);
 }

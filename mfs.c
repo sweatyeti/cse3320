@@ -82,7 +82,7 @@ void outputPidHistory( void );
 bool fetchPreviousCmd( int, char * );
 void setupSigHandling( void );
 void backgroundLastProcess( void );
-void parentProcess( int );
+void parentProcess( int, bool );
 
 int main()
 {
@@ -376,7 +376,7 @@ int main()
     else
     {
       // we're in the parent process
-      parentProcess(pid);
+      parentProcess(pid, true);
       
     }
 
@@ -664,7 +664,7 @@ void backgroundLastProcess()
     errno = 0;
     sigqueue(pid, SIGCONT, leSigval);
     
-    parentProcess(pid);
+    parentProcess(pid, false);
     
     if(errno != 0 && DEBUGMODE)
     {
@@ -693,42 +693,45 @@ void backgroundLastProcess()
  * returns: 
  *  void
  */
-void parentProcess(int childPid)
+void parentProcess(int childPid, bool addChildPidToHistory)
 {
   // variable to hold status of child process to wait on
-      int childStatus;
-      
-      if(DEBUGMODE)
-      {
-        printf("DEBUG: parentProcess -> child PID=%d\n", childPid);
-      }
-      
-      // keep track of the created child PIDs
-      addPidToHistory(childPid);
-      
-      // wait for the child process to exit or suspend
-      (void)waitpid( childPid, &childStatus, 0|WUNTRACED );
-      
-      if(DEBUGMODE)
-      {
-        // output status depending on how the child process exited (signal vs. normal)
-        if(WIFSIGNALED(childStatus))
-        {
-          printf("\nERROR -> child process %d exited with unhandled", childPid);
-          printf(" sig status %d: %s\n", WTERMSIG(childStatus), strsignal(WTERMSIG(childStatus)));
-        }
-        else if(WIFSTOPPED(childStatus))
-        {
-          // ctrl-z (SIGTSTP) gets here
-          printf( "\nDEBUG: child process %d exited with status %d ", childPid, childStatus);
-          printf( "and signal %d: %s\n", WSTOPSIG(childStatus), strsignal(WSTOPSIG(childStatus)));
-        }
-        else
-        {
-          // ctrl-c (SIGINT) gets here
-          printf( "\nDEBUG: child process %d exited with status %d\n", childPid, childStatus);
-        }
-        
-      }
-      //fflush(NULL);
+  int childStatus;
+  
+  if(DEBUGMODE)
+  {
+    printf("DEBUG: parentProcess -> child PID=%d\n", childPid);
+  }
+  
+  // if this is a new child, add it to the history
+  if( addChildPidToHistory )
+  {
+    addPidToHistory(childPid);
+  }
+  
+  // wait for the child process to exit or suspend
+  (void)waitpid( childPid, &childStatus, 0|WUNTRACED );
+  
+  if(DEBUGMODE)
+  {
+    // output status depending on how the child process exited (signal vs. normal)
+    if(WIFSIGNALED(childStatus))
+    {
+      printf("\nERROR -> child process %d exited with unhandled", childPid);
+      printf(" sig status %d: %s\n", WTERMSIG(childStatus), strsignal(WTERMSIG(childStatus)));
+    }
+    else if(WIFSTOPPED(childStatus))
+    {
+      // ctrl-z (SIGTSTP) gets here
+      printf( "\nDEBUG: child process %d exited with status %d ", childPid, childStatus);
+      printf( "and signal %d: %s\n", WSTOPSIG(childStatus), strsignal(WSTOPSIG(childStatus)));
+    }
+    else
+    {
+      // ctrl-c (SIGINT) gets here
+      printf( "\nDEBUG: child process %d exited with status %d\n", childPid, childStatus);
+    }
+    
+  }
+  //fflush(NULL);
 }

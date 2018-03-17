@@ -31,8 +31,14 @@
 #define MANDEL_PARAM_W 600
 #define MANDEL_PARAM_H 600
 
+// define the debug constant to enable/disable debug output
+//#define DBG true
+
+bool DBG = true;
+
 // function declarations (implementations after main())
-bool validCommand( int, char * ); 
+bool validCommand( int, char * );
+void startSeries( int );
 
 int main ( int argc, char * argv[] )
 {
@@ -44,11 +50,8 @@ int main ( int argc, char * argv[] )
         exit(EXIT_FAILURE);
     }
 
-    // define and init the var to hold how many processes the user wants to run
-    int numProcs = 0;
-    numProcs = atoi( argv[1] );
-    
-
+    // user command is valid, so start the series
+    //startSeries( atoi( argv[1] ) );
     
     exit(EXIT_SUCCESS);
 }
@@ -66,4 +69,39 @@ bool validCommand( int argCount, char * firstParam )
     }
 
     return true;
+}
+
+void startSeries( int numProcs )
+{
+    pid_t pid = fork();
+
+    if( pid == -1 )
+    {
+      // the call to fork() failed if pid == -1
+      if(DBG)
+      {
+        printf("DEBUG: call to fork() returned -1 - exiting...\n");
+        fflush(NULL);
+      }
+      printf("An error occurred. Please try again\n");
+      exit(EXIT_FAILURE);
+    }
+    else if( pid == 0 )
+    {
+      // we're in the child process
+      if(DBG)
+      {
+        printf("DEBUG: in child process after fork()\n");
+      }
+
+
+
+
+    }
+    else
+    {
+      // we're in the parent process
+
+
+    }
 }

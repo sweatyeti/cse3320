@@ -87,9 +87,8 @@ void startSeries( int numProcs )
   // allocate enough bytes to hold the longest filename: mandel##.bmp\0
   char bmpFilename[13];
 
-  // this for loop is the main outer loop that controls how many images are created
-  int i;
-  for( i = 0 ; i < NUM_MANDEL_RUNS ; i++ )
+  // begin the loop that hosts all the work
+  while(true)
   {
     // calculate the new S value each time the loop is run
     float currentMandelParamS = initialMandelParamS - ( i * mandelParamSFactor );
@@ -102,40 +101,37 @@ void startSeries( int numProcs )
     strcat( bmpFilename, bmpNum );
     strcat( bmpFilename, bmpExtension );
 
-    if(DBG)
+
+
+    /*
+    pid_t pid = fork();
+
+    if( pid == -1 )
     {
-      printf("%s\n", bmpFilename);
+      // the call to fork() failed if pid == -1
+      if(DBG)
+      {
+        printf("DEBUG: call to fork() returned -1 - exiting...\n");
+        fflush(NULL);
+      }
+      printf("An error occurred. Please try again\n");
+      exit(EXIT_FAILURE);
     }
-
-
-  }
-/*
-  pid_t pid = fork();
-
-  if( pid == -1 )
-  {
-    // the call to fork() failed if pid == -1
-    if(DBG)
+    else if( pid == 0 )
     {
-      printf("DEBUG: call to fork() returned -1 - exiting...\n");
-      fflush(NULL);
+      // we're in the child process
+      if(DBG)
+      {
+        printf("DEBUG: in child process after fork()\n");
+      }
+
     }
-    printf("An error occurred. Please try again\n");
-    exit(EXIT_FAILURE);
-  }
-  else if( pid == 0 )
-  {
-    // we're in the child process
-    if(DBG)
+    else
     {
-      printf("DEBUG: in child process after fork()\n");
-    }
+      // we're in the parent process
 
+
+    }*/
   }
-  else
-  {
-    // we're in the parent process
 
-
-  }*/
 }

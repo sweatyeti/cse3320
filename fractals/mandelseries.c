@@ -22,7 +22,7 @@
 #include <float.h>
 
 // how many times to run the mandel program
-#define NUM_MANDEL_RUNS 50          
+#define NUM_MANDEL_RUNS 3          
 
 // create the mandel program parameters
 // the 's' param changes for each instance of mandel, 
@@ -87,51 +87,77 @@ void startSeries( int numProcs )
   // allocate enough bytes to hold the longest filename: mandel##.bmp\0
   char bmpFilename[13];
 
+  // initialize counter for how many images have been produced thus far
+  int bmpCount = 0;
+
+  // initialize counter for how many child procs are running
+  int procCount = 0;
+
+  // declare int array that holds running child proc PIDs
+  int procPids[numProcs];
+
   // begin the loop that hosts all the work
   while(true)
   {
+    while(true)
+    {
+      if( procCount != numProcs )
+      {
+        pid_t pid = fork();
+
+        if( pid == -1 )
+        {
+          // the call to fork() failed if pid == -1
+          if(DBG)
+          {
+            printf("DEBUG: call to fork() returned -1 - exiting...\n");
+            fflush(NULL);
+          }
+          printf("An error occurred. Please try again\n");
+          exit(EXIT_FAILURE);
+        }
+        else if( pid == 0 )
+        {
+          // we're in the child process
+          if(DBG)
+          {
+            printf("DEBUG: in child process after fork()\n");
+          }
+
+        }
+        else
+        {
+          // we're in the parent process
+
+          // add the child PID to the array, increment the proc count and the bmp count
+          procPids[numProcs] = pid;
+          numProcs++;
+          bmpCount++;
+
+          if(DBG)
+          {
+            printf("DEBUG: child %d created to create bmp #%d\n", pid, bmpCount);
+          }
+        }
+
+      }
+
+    } // inner while
+
     // calculate the new S value each time the loop is run
-    float currentMandelParamS = initialMandelParamS - ( i * mandelParamSFactor );
+    float currentMandelParamS = initialMandelParamS - ( bmpCount * mandelParamSFactor );
 
     // build the filename to be created and sent to the mandel program
-    // TODO: can be refactored to a separate function
+    // TODO: can be refactored to a separate function that populates a provided buffer
     strcpy( bmpFilename, bmpName );
     char bmpNum[2];
-    sprintf( bmpNum, "%d", i+1 );
+    sprintf( bmpNum, "%d", bmpCount+1 );
     strcat( bmpFilename, bmpNum );
     strcat( bmpFilename, bmpExtension );
 
 
 
-    /*
-    pid_t pid = fork();
 
-    if( pid == -1 )
-    {
-      // the call to fork() failed if pid == -1
-      if(DBG)
-      {
-        printf("DEBUG: call to fork() returned -1 - exiting...\n");
-        fflush(NULL);
-      }
-      printf("An error occurred. Please try again\n");
-      exit(EXIT_FAILURE);
-    }
-    else if( pid == 0 )
-    {
-      // we're in the child process
-      if(DBG)
-      {
-        printf("DEBUG: in child process after fork()\n");
-      }
-
-    }
-    else
-    {
-      // we're in the parent process
-
-
-    }*/
-  }
+  } // outer while
 
 }

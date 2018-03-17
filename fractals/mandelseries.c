@@ -23,18 +23,16 @@
 // how many times to run the mandel program
 #define NUM_MANDEL_RUNS 50          
 
-// define the constants to use for the mandel program
-#define MANDEL_PARAM_X -0.163013    
-#define MANDEL_PARAM_Y -1.03265
-#define MANDEL_PARAM_S 0.000025
-#define MANDEL_PARAM_M 7000
-#define MANDEL_PARAM_W 600
-#define MANDEL_PARAM_H 600
+// create the mandel program parameters
+const char * mandelParamX = "-0.163013";
+const char * mandelParamY = "-1.03265";
+const char * mandelParamS = "0.000025";
+const char * mandelParamM = "7000";
+const char * mandelParamW = "600";
+const char * mandelParamH = "600";
 
-// define the debug constant to enable/disable debug output
-//#define DBG true
-
-bool DBG = true;
+// create the debug constant to enable/disable debug output
+const bool DBG = true;
 
 // function declarations (implementations after main())
 bool validCommand( int, char * );
@@ -93,9 +91,6 @@ void startSeries( int numProcs )
       {
         printf("DEBUG: in child process after fork()\n");
       }
-
-
-
 
     }
     else

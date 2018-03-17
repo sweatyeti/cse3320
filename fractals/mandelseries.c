@@ -20,7 +20,8 @@
 #include <signal.h>
 #include <stdbool.h>
 
-#define NUM_MANDEL_RUNS 50          // how many times to run the mandel program
+// how many times to run the mandel program
+#define NUM_MANDEL_RUNS 50          
 
 // define the constants to use for the mandel program
 #define MANDEL_PARAM_X -0.163013    

@@ -19,14 +19,18 @@
 #include <string.h>
 #include <signal.h>
 #include <stdbool.h>
+#include <float.h>
 
 // how many times to run the mandel program
 #define NUM_MANDEL_RUNS 50          
 
 // create the mandel program parameters
+// the 's' param changes for each instance of mandel, 
+// so create a var for its initial and final values
 const char * mandelParamX = "-0.163013";
 const char * mandelParamY = "-1.03265";
-const char * mandelParamS = "0.000025";
+const float initialMandelParamS = 2;
+const float finalMandelParamS = 0.000025;
 const char * mandelParamM = "7000";
 const char * mandelParamW = "600";
 const char * mandelParamH = "600";
@@ -49,7 +53,7 @@ int main ( int argc, char * argv[] )
     }
 
     // user command is valid, so start the series
-    //startSeries( atoi( argv[1] ) );
+    startSeries( atoi( argv[1] ) );
     
     exit(EXIT_SUCCESS);
 }
@@ -71,32 +75,67 @@ bool validCommand( int argCount, char * firstParam )
 
 void startSeries( int numProcs )
 {
-    pid_t pid = fork();
+  // calculate the S amount to subtract for each subsequent mandel run
+  // using 49 because our first S value is set, so we have 49 available iterations
+  // to get to our final value
+  float mandelParamSFactor = (initialMandelParamS - finalMandelParamS) / 49;
 
-    if( pid == -1 )
+  // create vars to hold the beginning and end of the output bmp filename
+  char * bmpName = "mandel";
+  char * bmpExtension = ".bmp";
+
+  // allocate enough bytes to hold the longest filename: mandel##.bmp\0
+  char bmpFilename[13];
+
+  // this for loop is the main outer loop that controls how many images are created
+  int i;
+  for( i = 0 ; i < NUM_MANDEL_RUNS ; i++ )
+  {
+    // calculate the new S value each time the loop is run
+    float currentMandelParamS = initialMandelParamS - ( i * mandelParamSFactor );
+
+    // build the filename to be created and sent to the mandel program
+    // TODO: can be refactored to a separate function
+    strcpy( bmpFilename, bmpName );
+    char bmpNum[2];
+    sprintf( bmpNum, "%d", i+1 );
+    strcat( bmpFilename, bmpNum );
+    strcat( bmpFilename, bmpExtension );
+
+    if(DBG)
     {
-      // the call to fork() failed if pid == -1
-      if(DBG)
-      {
-        printf("DEBUG: call to fork() returned -1 - exiting...\n");
-        fflush(NULL);
-      }
-      printf("An error occurred. Please try again\n");
-      exit(EXIT_FAILURE);
+      printf("%s\n", bmpFilename);
     }
-    else if( pid == 0 )
+
+
+  }
+/*
+  pid_t pid = fork();
+
+  if( pid == -1 )
+  {
+    // the call to fork() failed if pid == -1
+    if(DBG)
     {
-      // we're in the child process
-      if(DBG)
-      {
-        printf("DEBUG: in child process after fork()\n");
-      }
-
+      printf("DEBUG: call to fork() returned -1 - exiting...\n");
+      fflush(NULL);
     }
-    else
+    printf("An error occurred. Please try again\n");
+    exit(EXIT_FAILURE);
+  }
+  else if( pid == 0 )
+  {
+    // we're in the child process
+    if(DBG)
     {
-      // we're in the parent process
-
-
+      printf("DEBUG: in child process after fork()\n");
     }
+
+  }
+  else
+  {
+    // we're in the parent process
+
+
+  }*/
 }

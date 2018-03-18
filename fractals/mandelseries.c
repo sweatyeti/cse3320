@@ -22,7 +22,7 @@
 #include <float.h>
 
 // how many times to run the mandel program
-#define NUM_MANDEL_RUNS 3          
+const int maxMandelRuns = 20;          
 
 // create the mandel program parameters
 // the 's' param changes for each instance of mandel, 
@@ -73,7 +73,7 @@ bool validCommand( int argCount, char * firstParam )
     return true;
 }
 
-void startSeries( int numProcs )
+void startSeries( int maxRunningProcs )
 {
   // calculate the S amount to subtract for each subsequent mandel run
   // using 49 because our first S value is set, so we have 49 available iterations
@@ -91,18 +91,37 @@ void startSeries( int numProcs )
   int bmpCount = 0;
 
   // initialize counter for how many child procs are running
-  int procCount = 0;
+  int runningProcs = 0;
 
-  // declare int array that holds running child proc PIDs
-  int procPids[numProcs];
-
-  // begin the loop that hosts all the work
+  // begin the outer loop that encompasses all child process and output creation
   while(true)
   {
+    // since this outer loop waits for any children, we only want to break out
+    // if we've reached the max # of images AND there are no more children running
+    if( bmpCount == maxMandelRuns && runningProcs == 0)
+    {
+      break;
+    }
+
+    // this inner loop contains the logic for managing the # of active children
     while(true)
     {
-      if( procCount != numProcs )
+      // since the outer loop manages the waiting and iterates until all children 
+      // have exited, this condition makes sure this inner loop doesn't create
+      // any more children if the required amount of output files have already 
+      // been created, or are being created
+      if( bmpCount == maxMandelRuns )
       {
+        break;
+      }
+
+      // check if the # of children is the amount the user requested
+      // if not, create another one to do the bidding
+      // if yes, then we break out of this inner while loop and hand 
+      // continue with the outer while
+      if( runningProcs != maxRunningProcs )
+      {
+        
         pid_t pid = fork();
 
         if( pid == -1 )
@@ -124,39 +143,51 @@ void startSeries( int numProcs )
             printf("DEBUG: in child process after fork()\n");
           }
 
+          // calculate the new S value each time the loop is run
+          /*float currentMandelParamS = initialMandelParamS - ( bmpCount * mandelParamSFactor );
+
+          // build the filename to be created and sent to the mandel program
+          // TODO: can be refactored to a separate function that populates a provided buffer
+          strcpy( bmpFilename, bmpName );
+          char bmpNum[2];
+          sprintf( bmpNum, "%d", bmpCount+1 );
+          strcat( bmpFilename, bmpNum );
+          strcat( bmpFilename, bmpExtension );*/
+
+          sleep(runningProcs);
+
+          if(DBG)
+          {
+            printf("DEBUG: child for bmp %d exiting\n", bmpCount);
+          }
+
+          exit(EXIT_SUCCESS);
+
         }
         else
         {
           // we're in the parent process
 
-          // add the child PID to the array, increment the proc count and the bmp count
-          procPids[numProcs] = pid;
-          numProcs++;
+          // increment the running proc count and the bmp count
+          runningProcs++;
           bmpCount++;
 
           if(DBG)
           {
-            printf("DEBUG: child %d created to create bmp #%d\n", pid, bmpCount);
+            printf("DEBUG: child %d spawned to create bmp #%d\n", pid, bmpCount);
           }
         }
 
-      }
+      } 
+      else
+      {
+        break;
+      } // if( runningProcs != maxRunningProcs )..else
 
     } // inner while
 
-    // calculate the new S value each time the loop is run
-    float currentMandelParamS = initialMandelParamS - ( bmpCount * mandelParamSFactor );
-
-    // build the filename to be created and sent to the mandel program
-    // TODO: can be refactored to a separate function that populates a provided buffer
-    strcpy( bmpFilename, bmpName );
-    char bmpNum[2];
-    sprintf( bmpNum, "%d", bmpCount+1 );
-    strcat( bmpFilename, bmpNum );
-    strcat( bmpFilename, bmpExtension );
-
-
-
+    wait(NULL);
+    runningProcs--;
 
   } // outer while
 

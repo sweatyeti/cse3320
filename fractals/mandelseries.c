@@ -73,7 +73,7 @@ int main ( int argc, char * argv[] )
  * 
  * description: 
  *  short function that does a couple simple checks on the user input to ensure 
- *  it's what is expected (only one actual argument that can be converted to a number)
+ *  it's what is expected (only one actual argument that can be converted to a number).
  * 
  * parameters:
  *  - int argCount: the count of arguments, including the program name, used to run this program
@@ -140,7 +140,7 @@ void runSeries( int maxRunningProcs )
   // flag is flipped once the string has been displayed on the console.
   bool waitingForAllToFinishOutputOnce = false;
 
-  // begin the outer loop that encompasses all child process and mandel runs
+  // begin the outer loop that encompasses all child process creation and mandel runs
   while(true)
   {
     // since this outer loop waits for any children, we only want to break out
@@ -161,7 +161,11 @@ void runSeries( int maxRunningProcs )
       // since the outer loop manages the waiting and iterates until all children 
       // have exited, this condition makes sure this inner loop doesn't create
       // any more children if the required amount of output files have already 
-      // been created, or are being created
+      // been created, or are being created.
+      // this logic also is what allows the user to enter an amount of child 
+      // processes > how many images will be created, and still work properly.
+      // In other words, even if the user requested 60 processes when only 50 are needed,
+      // the logic will now allow any more children to be created once 50 have been reached.
       if( bmpCount == maxMandelRuns )
       {
         // at this point, we're just waiting for existing children to finish, 

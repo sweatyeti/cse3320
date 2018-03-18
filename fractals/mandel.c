@@ -20,7 +20,22 @@
 #include <errno.h>
 #include <string.h>
 #include <pthread.h>
+#include <stdbool.h>
 
+// create the debug constant to enable/disable debug output
+const bool DBG = false;
+
+struct threadArgs{
+  struct bitmap * bm;
+
+
+};
+
+// create and initialize the global mutex that controls access to the
+// main bitmap data structure, which controls the associated memory
+pthread_mutex_t bmpMutex = PTHREAD_MUTEX_INITIALIZER;
+
+// function declarations
 int iteration_to_color( int i, int max );
 int iterations_at_point( double x, double y, int max );
 void compute_image( struct bitmap *bm, double xmin, double xmax, double ymin, double ymax, int max, int numThreads );
@@ -96,6 +111,12 @@ int main( int argc, char *argv[] )
     }
   }
 
+  if( numThreads < 1 )
+  {
+    printf("Invalid value for parameter -n, please try again. Please use mandel -h to see the help output.\n");
+    exit(EXIT_FAILURE);
+  }
+
   // Display the configuration of the image.
   printf("mandel: x=%lf y=%lf scale=%lf max=%d numThreads=%d outfile=%s\n",xcenter,ycenter,scale,max,numThreads,outfile);
 
@@ -107,6 +128,8 @@ int main( int argc, char *argv[] )
 
   // Compute the Mandelbrot image
   compute_image(bm,xcenter-scale,xcenter+scale,ycenter-scale,ycenter+scale,max,numThreads);
+
+  // BUGBUG: Need to ensure the code after compute_image runs ONLY when the image has been fully computed
 
   // Save the image in the stated file.
   if(!bitmap_save(bm,outfile)) {
@@ -124,12 +147,28 @@ Scale the image to the range (xmin-xmax,ymin-ymax), limiting iterations to "max"
 
 void compute_image( struct bitmap *bm, double xmin, double xmax, double ymin, double ymax, int max, int threadsToUse )
 {
-  int i,j;
+  int i, j, height;
 
+  // we are only changing how the image is built with respect to height, not width. So, the width is constant.
   int width = bitmap_width(bm);
-  int height = bitmap_height(bm);
+  int totalHeight = bitmap_height(bm);
 
+  if( threadsToUse > 1 )
+  {
+    int modRemainder = totalHeight % threadsToUse;
+    int evenHeight = totalHeight - modRemainder;
+    int baseHeight = evenHeight / threadsToUse;
+    int finalThreadHeight = baseHeight + modRemainder;
 
+    for( i=0; i<threadsToUse; i++ )
+    {
+
+    }
+  }
+  else
+  {
+    height = totalHeight;
+  }
 
   // For every pixel in the image...
 

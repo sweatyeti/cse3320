@@ -22,18 +22,18 @@
 #include <float.h>
 
 // how many times to run the mandel program
-const int maxMandelRuns = 20;          
+const int maxMandelRuns = 10;          
 
 // create the mandel program parameters
 // the 's' param changes for each instance of mandel, 
 // so create a var for its initial and final values
-const char * mandelParamX = "-0.163013";
-const char * mandelParamY = "-1.03265";
-const float initialMandelParamS = 2;
-const float finalMandelParamS = 0.000025;
-const char * mandelParamM = "7000";
-const char * mandelParamW = "600";
-const char * mandelParamH = "600";
+char * mandelParamX = "-0.163013";
+char * mandelParamY = "-1.03265";
+float initialMandelParamS = 2;
+float finalMandelParamS = 0.000025;
+char * mandelParamM = "7000";
+char * mandelParamW = "600";
+char * mandelParamH = "600";
 
 // create the debug constant to enable/disable debug output
 const bool DBG = true;
@@ -54,6 +54,11 @@ int main ( int argc, char * argv[] )
 
     // user command is valid, so start the series
     startSeries( atoi( argv[1] ) );
+
+    if(DBG)
+    {
+      printf("DEBUG: main() exiting...\n");
+    }
     
     exit(EXIT_SUCCESS);
 }
@@ -75,10 +80,14 @@ bool validCommand( int argCount, char * firstParam )
 
 void startSeries( int maxRunningProcs )
 {
+  if(DBG)
+  {
+    printf("DEBUG: in startSeries()\n");
+  }
   // calculate the S amount to subtract for each subsequent mandel run
-  // using 49 because our first S value is set, so we have 49 available iterations
+  // using maxMandelRuns-1 because our first S value is set, so we have max-1 available iterations
   // to get to our final value
-  float mandelParamSFactor = (initialMandelParamS - finalMandelParamS) / 49;
+  float mandelParamSFactor = (initialMandelParamS - finalMandelParamS) / (maxMandelRuns - 1);
 
   // create vars to hold the beginning and end of the output bmp filename
   char * bmpName = "mandel";
@@ -100,6 +109,11 @@ void startSeries( int maxRunningProcs )
     // if we've reached the max # of images AND there are no more children running
     if( bmpCount == maxMandelRuns && runningProcs == 0)
     {
+      if(DBG)
+      {
+        printf("DEBUG->parent: all output files created & and child procs have exited..\n");
+        printf("DEBUG->parent: exiting main loop in startSeries()..\n");
+      }
       break;
     }
 
@@ -121,7 +135,7 @@ void startSeries( int maxRunningProcs )
       // continue with the outer while
       if( runningProcs != maxRunningProcs )
       {
-        
+        // do the fork thing
         pid_t pid = fork();
 
         if( pid == -1 )
@@ -138,13 +152,9 @@ void startSeries( int maxRunningProcs )
         else if( pid == 0 )
         {
           // we're in the child process
-          if(DBG)
-          {
-            printf("DEBUG: in child process after fork()\n");
-          }
 
           // calculate the new S value each time the loop is run
-          /*float currentMandelParamS = initialMandelParamS - ( bmpCount * mandelParamSFactor );
+          float currentMandelParamS = initialMandelParamS - ( bmpCount * mandelParamSFactor );
 
           // build the filename to be created and sent to the mandel program
           // TODO: can be refactored to a separate function that populates a provided buffer
@@ -152,13 +162,52 @@ void startSeries( int maxRunningProcs )
           char bmpNum[2];
           sprintf( bmpNum, "%d", bmpCount+1 );
           strcat( bmpFilename, bmpNum );
-          strcat( bmpFilename, bmpExtension );*/
+          strcat( bmpFilename, bmpExtension );
 
+          // command for reference:
+          // mandel -s .000025 -y -1.03265 -m 7000 -x -.163013 -W 600 -H 600 mandel#.bmp
+
+          // construct the mandel argument list, starting with the less complicates ones
+          char * mandelArgList[14];
+          mandelArgList[0] = "mandel";
+          mandelArgList[1] = "-y";
+          mandelArgList[2] = mandelParamY;
+          mandelArgList[3] = "-m";
+          mandelArgList[4] = mandelParamM;
+          mandelArgList[5] = "-x";
+          mandelArgList[6] = mandelParamX;
+          mandelArgList[7] = "-W";
+          mandelArgList[8] = mandelParamW;
+          mandelArgList[9] = "-H";
+          mandelArgList[10] = mandelParamH;
+
+          // since the -s argument value is a calculated float, we need to convert it to char *,
+          // then it can be added to the arg list
+          mandelArgList[11] = "-s";
+          char argSBuffer[20];
+          snprintf( argSBuffer, 20, "%f", currentMandelParamS );
+          mandelArgList[12] = argSBuffer;
+
+          // finally, add the filename to be output as the 14th and last argument
+          mandelArgList[13] = bmpFilename;
+
+          if(DBG)
+          {
+            printf("DEBUG->child: command to be run: %s %s %s ",mandelArgList[0],mandelArgList[1],mandelArgList[2]);
+            printf("%s %s %s %s %s ",mandelArgList[3],mandelArgList[4],mandelArgList[5],mandelArgList[6],mandelArgList[7]);
+            printf("%s %s %s %s %s %s\n",mandelArgList[8],mandelArgList[9],mandelArgList[10],mandelArgList[11],mandelArgList[12],mandelArgList[13]);
+          }
+
+          if(DBG)
+          {
+            printf("DEBUG->child: calling execv()..\n");
+          }
+          //execv("mandel", mandelArgList);
           sleep(runningProcs);
 
           if(DBG)
           {
-            printf("DEBUG: child for bmp %d exiting\n", bmpCount);
+            printf("DEBUG->child: process for bmp %s exiting..\n", bmpFilename);
           }
 
           exit(EXIT_SUCCESS);
@@ -174,7 +223,7 @@ void startSeries( int maxRunningProcs )
 
           if(DBG)
           {
-            printf("DEBUG: child %d spawned to create bmp #%d\n", pid, bmpCount);
+            printf("DEBUG->parent: child %d spawned to create bmp #%d..\n", pid, bmpCount);
           }
         }
 

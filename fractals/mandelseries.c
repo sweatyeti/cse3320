@@ -22,7 +22,7 @@
 #include <float.h>
 
 // how many times to run the mandel program
-const int maxMandelRuns = 10;          
+const int maxMandelRuns = 50;          
 
 // create the mandel program parameters
 // the 's' param changes for each instance of mandel, 
@@ -36,7 +36,7 @@ char * mandelParamW = "600";
 char * mandelParamH = "600";
 
 // create the debug constant to enable/disable debug output
-const bool DBG = true;
+const bool DBG = false;
 
 // function declarations (implementations after main())
 bool validCommand( int, char * );
@@ -136,6 +136,7 @@ void startSeries( int maxRunningProcs )
       if( runningProcs != maxRunningProcs )
       {
         // do the fork thing
+        errno = 0;
         pid_t pid = fork();
 
         if( pid == -1 )
@@ -143,10 +144,10 @@ void startSeries( int maxRunningProcs )
           // the call to fork() failed if pid == -1
           if(DBG)
           {
-            printf("DEBUG: call to fork() returned -1 - exiting...\n");
-            fflush(NULL);
+            printf("ERROR -> after fork(): %d: %s.. exiting...\n", errno, strerror(errno) );
           }
           printf("An error occurred. Please try again\n");
+          
           exit(EXIT_FAILURE);
         }
         else if( pid == 0 )
@@ -167,8 +168,8 @@ void startSeries( int maxRunningProcs )
           // command for reference:
           // mandel -s .000025 -y -1.03265 -m 7000 -x -.163013 -W 600 -H 600 mandel#.bmp
 
-          // construct the mandel argument list, starting with the less complicates ones
-          char * mandelArgList[14];
+          // construct the mandel argument list, starting with the less complicated ones
+          char * mandelArgList[16];
           mandelArgList[0] = "mandel";
           mandelArgList[1] = "-y";
           mandelArgList[2] = mandelParamY;
@@ -189,7 +190,9 @@ void startSeries( int maxRunningProcs )
           mandelArgList[12] = argSBuffer;
 
           // finally, add the filename to be output as the 14th and last argument
-          mandelArgList[13] = bmpFilename;
+          mandelArgList[13] = "-o";
+          mandelArgList[14] = bmpFilename;
+          mandelArgList[15] = NULL;
 
           if(DBG)
           {
@@ -202,15 +205,23 @@ void startSeries( int maxRunningProcs )
           {
             printf("DEBUG->child: calling execv()..\n");
           }
-          //execv("mandel", mandelArgList);
-          sleep(runningProcs);
+          errno = 0;
+          execvp("mandel", mandelArgList);
+
+          if(DBG || errno != 0)
+          {
+            printf( "ERROR -> after execv: %d: %s\n", errno, strerror(errno) );
+            exit(EXIT_FAILURE);
+          }
+
+          /*sleep(runningProcs);
 
           if(DBG)
           {
             printf("DEBUG->child: process for bmp %s exiting..\n", bmpFilename);
           }
 
-          exit(EXIT_SUCCESS);
+          exit(EXIT_SUCCESS);*/
 
         }
         else

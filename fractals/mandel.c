@@ -25,10 +25,16 @@
 // create the debug constant to enable/disable debug output
 const bool DBG = false;
 
+// this struct holds the arguments that will get passed to the computeBands function
 struct threadArgs{
-  struct bitmap * bm;
-
-
+  struct bitmap * theBitmap;
+  double threadXMin;
+  double threadXMax;
+  double threadYMin;
+  double threadYMax;
+  int threadMax;
+  int heightBottom;
+  int heightTop;
 };
 
 // create and initialize the global mutex that controls access to the
@@ -39,6 +45,7 @@ pthread_mutex_t bmpMutex = PTHREAD_MUTEX_INITIALIZER;
 int iteration_to_color( int i, int max );
 int iterations_at_point( double x, double y, int max );
 void compute_image( struct bitmap *bm, double xmin, double xmax, double ymin, double ymax, int max, int numThreads );
+void computeBands( void * );
 
 void show_help()
 {
@@ -155,6 +162,9 @@ void compute_image( struct bitmap *bm, double xmin, double xmax, double ymin, do
 
   if( threadsToUse > 1 )
   {
+    struct threadArgs threadArgsArr[threadsToUse];
+
+    // multithreaded calculations
     int modRemainder = totalHeight % threadsToUse;
     int evenHeight = totalHeight - modRemainder;
     int baseHeight = evenHeight / threadsToUse;
@@ -167,26 +177,36 @@ void compute_image( struct bitmap *bm, double xmin, double xmax, double ymin, do
   }
   else
   {
+    // original, single-threaded calculations
     height = totalHeight;
+
+    for(j=0;j<height;j++) 
+    {
+      for(i=0;i<width;i++) 
+      {
+        // Determine the point in x,y space for that pixel.
+        double x = xmin + i*(xmax-xmin)/width;
+        double y = ymin + j*(ymax-ymin)/height;
+
+        // Compute the iterations at that point.
+        int iters = iterations_at_point(x,y,max);
+
+        // Set the pixel in the bitmap.
+        bitmap_set(bm,i,j,iters);
+      }
+    }
   }
 
   // For every pixel in the image...
 
-  for(j=0;j<height;j++) {
 
-    for(i=0;i<width;i++) {
+}
 
-      // Determine the point in x,y space for that pixel.
-      double x = xmin + i*(xmax-xmin)/width;
-      double y = ymin + j*(ymax-ymin)/height;
+void computeBands( void * args )
+{
+  struct threadArgs *params;
+  params = (struct threadArgs *) args;
 
-      // Compute the iterations at that point.
-      int iters = iterations_at_point(x,y,max);
-
-      // Set the pixel in the bitmap.
-      bitmap_set(bm,i,j,iters);
-    }
-  }
 }
 
 /*

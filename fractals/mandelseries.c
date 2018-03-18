@@ -135,6 +135,11 @@ void runSeries( int maxRunningProcs )
   // initialize counter for how many child procs are running at a time
   int runningProcs = 0;
 
+  // this flag controls if the final output string telling the user that we're just waiting
+  // for all child procs to exit will be displayed. We only want to display it once, so this
+  // flag is flipped once the string has been displayed on the console.
+  bool waitingForAllToFinishOutputOnce = false;
+
   // begin the outer loop that encompasses all child process and mandel runs
   while(true)
   {
@@ -159,6 +164,16 @@ void runSeries( int maxRunningProcs )
       // been created, or are being created
       if( bmpCount == maxMandelRuns )
       {
+        // at this point, we're just waiting for existing children to finish, 
+        // so inform the user one time
+        if ( !waitingForAllToFinishOutputOnce )
+        {
+          // sleep to give the 50th child a little extra time to get started
+          // the sleep helps make sure the printf outputs the string at the very end
+          sleep(1);
+          printf("The last mandel child process has been started. Waiting for all to exit...\n\n");
+          waitingForAllToFinishOutputOnce = true;
+        }
         break;
       }
 

@@ -19,10 +19,11 @@
 #include <math.h>
 #include <errno.h>
 #include <string.h>
+#include <pthread.h>
 
 int iteration_to_color( int i, int max );
 int iterations_at_point( double x, double y, int max );
-void compute_image( struct bitmap *bm, double xmin, double xmax, double ymin, double ymax, int max );
+void compute_image( struct bitmap *bm, double xmin, double xmax, double ymin, double ymax, int max, int numThreads );
 
 void show_help()
 {
@@ -96,7 +97,7 @@ int main( int argc, char *argv[] )
   }
 
   // Display the configuration of the image.
-  printf("mandel: x=%lf y=%lf scale=%lf max=%d outfile=%s\n",xcenter,ycenter,scale,max,outfile);
+  printf("mandel: x=%lf y=%lf scale=%lf max=%d numThreads=%d outfile=%s\n",xcenter,ycenter,scale,max,numThreads,outfile);
 
   // Create a bitmap of the appropriate size.
   struct bitmap *bm = bitmap_create(image_width,image_height);
@@ -105,7 +106,7 @@ int main( int argc, char *argv[] )
   bitmap_reset(bm,MAKE_RGBA(0,0,255,0));
 
   // Compute the Mandelbrot image
-  compute_image(bm,xcenter-scale,xcenter+scale,ycenter-scale,ycenter+scale,max);
+  compute_image(bm,xcenter-scale,xcenter+scale,ycenter-scale,ycenter+scale,max,numThreads);
 
   // Save the image in the stated file.
   if(!bitmap_save(bm,outfile)) {
@@ -121,12 +122,14 @@ Compute an entire Mandelbrot image, writing each point to the given bitmap.
 Scale the image to the range (xmin-xmax,ymin-ymax), limiting iterations to "max"
 */
 
-void compute_image( struct bitmap *bm, double xmin, double xmax, double ymin, double ymax, int max )
+void compute_image( struct bitmap *bm, double xmin, double xmax, double ymin, double ymax, int max, int threadsToUse )
 {
   int i,j;
 
   int width = bitmap_width(bm);
   int height = bitmap_height(bm);
+
+
 
   // For every pixel in the image...
 
@@ -174,7 +177,7 @@ int iterations_at_point( double x, double y, int max )
 }
 
 /*
-Convert a iteration number to an RGBA color.
+Convert an iteration number to an RGBA color.
 Here, we just scale to gray with a maximum of imax.
 Modify this function to make more interesting colors.
 */

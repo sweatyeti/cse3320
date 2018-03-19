@@ -156,34 +156,35 @@ void compute_image( struct bitmap *bm, double xmin, double xmax, double ymin, do
 {
   int i,j,height;
 
-  // we are only changing how the image is built with respect to height, not width. So, the width is constant.
+  // we are only changing how the image is built with respect to 
+  // height, not width. So, the width is constant.
   int width = bitmap_width(bm);
   int totalHeight = bitmap_height(bm);
 
   if( threadsToUse > 1 )
   {
-    // 
+    // instantiate the array that will hold all struct pointers for 
+    // computeBands() parameters
     struct threadArgs threadArgsArr[threadsToUse];
 
-    // multithreaded calculations
+    // since the number of threads may not cleanly divide the number of 
+    // height pixels, store the modulus of them.
     int modRemainder = totalHeight % threadsToUse;
-    int evenHeight = totalHeight - modRemainder;
-    int baseHeight = evenHeight / threadsToUse;
-    int finalThreadHeight = baseHeight + modRemainder;
-/*
-    struct threadArgs{
-  struct bitmap * theBitmap;
-  double threadXMin;
-  double threadXMax;
-  double threadYMin;
-  double threadYMax;
-  int threadMax;
-  int heightBottom;
-  int heightTop;
-};*/
 
+    // subtract the modulus remainder fromn the overall bmp height 
+    // to get a number that will cleanly divide by the number of threads. 
+    // The modRemainder will later be re-added to the final thread's 
+    // upper-bound height.
+    int evenHeight = totalHeight - modRemainder;
+    
+    // baseHeight will be the main variable to use when determining the bands 
+    // of pixels to calculate per thread
+    int baseHeight = evenHeight / threadsToUse;
+
+    // start the loop that spins-off threads
     for( i=0 ; i<threadsToUse ; i++ )
     {
+      // assign all the threadArgs struct values
       threadArgsArr[i].theBitmap = bm;
       threadArgsArr[i].threadXMin = xmin;
       threadArgsArr[i].threadXMax = xmax;
@@ -192,15 +193,30 @@ void compute_image( struct bitmap *bm, double xmin, double xmax, double ymin, do
       threadArgsArr[i].threadMax = max;
       
       // calculate the pixels that apply for this iteration of the band
+      // the bottom bound is always a multiple of the baseHeight, except when it's zero (first thread)
       threadArgsArr[i].heightBottom = 0 + ( i * baseHeight );
+
+      // the upper bound can be thought of as the lower bound of the next band (the i+1), minus 1
       threadArgsArr[i].heightTop = 0 + ( (i+1) * baseHeight ) - 1 ;
+
+      // except when the current iteration of the loop is for the final thread, in
+      // which case we need to add the modRemainder that was calculated earlier
       if( i == threadsToUse - 1 )
       {
         threadArgsArr[i].heightTop = threadArgsArr[i].heightTop + modRemainder ;
       }
 
-    }
-  }
+      thread_t tid;
+
+      int returnCode = pthread_create( &tid, NULL, computeBands, (void *) &threadArgsArr[i]);
+
+      if( returnCode != 0 )
+      {
+        printf("There was an issue creating threads, and the program must exit. Please try again.\n");
+      }
+
+    } // for
+  } // if( threadsToUse > 1 )
   else
   {
     // original, single-threaded calculations
@@ -221,18 +237,19 @@ void compute_image( struct bitmap *bm, double xmin, double xmax, double ymin, do
         bitmap_set(bm,i,j,iters);
       }
     }
-  }
+  } // else
 
   // For every pixel in the image...
 
 
 }
 
-void computeBands( void * args )
+void * computeBands( void * args )
 {
   struct threadArgs *params;
   params = (struct threadArgs *) args;
 
+  pthread_exit(NULL);
 }
 
 /*

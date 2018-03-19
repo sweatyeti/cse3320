@@ -21,9 +21,10 @@
 #include <string.h>
 #include <pthread.h>
 #include <stdbool.h>
+#include <unistd.h>
 
 // create the debug constant to enable/disable debug output
-const bool DBG = true;
+const bool DBG = false;
 
 // this struct holds the arguments that will get passed to the computeBands function
 struct bandCreationParams{
@@ -287,6 +288,7 @@ void computeImage( struct bitmap *bm, double xmin, double xmax, double ymin, dou
 
 void * computeBands( void * args )
 {
+  printf("in compute bands (should see this the same # times as there are threads)\n");
   // re-cast the struct holding the parameters
   struct bandCreationParams *params = args;
 
@@ -302,11 +304,14 @@ void * computeBands( void * args )
   int totalHeight = params->bmpTotalHeight;
   int heightLowerBound = params->bandHeightBottom;
   int heightUpperBound = params->bandHeightTop;
+  //sleep(2);
 
   if ( multithreading )
   {
     // 
+    //printf("unlocked\n");
     pthread_mutex_lock(&threadCountMutex);
+    printf("locked\n");
     runningThreads++;
     if(DBG)
     {
@@ -340,6 +345,7 @@ void * computeBands( void * args )
       if( multithreading )
       {
         pthread_mutex_lock(&bmpMutex);
+        printf("%d %d,",i,j );
         bitmap_set(bm,i,j,iters);
         pthread_mutex_unlock(&bmpMutex);
       }

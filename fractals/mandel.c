@@ -154,7 +154,7 @@ Scale the image to the range (xmin-xmax,ymin-ymax), limiting iterations to "max"
 
 void compute_image( struct bitmap *bm, double xmin, double xmax, double ymin, double ymax, int max, int threadsToUse )
 {
-  int i, j, height;
+  int i,j,height;
 
   // we are only changing how the image is built with respect to height, not width. So, the width is constant.
   int width = bitmap_width(bm);
@@ -162,6 +162,7 @@ void compute_image( struct bitmap *bm, double xmin, double xmax, double ymin, do
 
   if( threadsToUse > 1 )
   {
+    // 
     struct threadArgs threadArgsArr[threadsToUse];
 
     // multithreaded calculations
@@ -169,9 +170,34 @@ void compute_image( struct bitmap *bm, double xmin, double xmax, double ymin, do
     int evenHeight = totalHeight - modRemainder;
     int baseHeight = evenHeight / threadsToUse;
     int finalThreadHeight = baseHeight + modRemainder;
+/*
+    struct threadArgs{
+  struct bitmap * theBitmap;
+  double threadXMin;
+  double threadXMax;
+  double threadYMin;
+  double threadYMax;
+  int threadMax;
+  int heightBottom;
+  int heightTop;
+};*/
 
-    for( i=0; i<threadsToUse; i++ )
+    for( i=0 ; i<threadsToUse ; i++ )
     {
+      threadArgsArr[i].theBitmap = bm;
+      threadArgsArr[i].threadXMin = xmin;
+      threadArgsArr[i].threadXMax = xmax;
+      threadArgsArr[i].threadYMin = ymin;
+      threadArgsArr[i].threadYMax = ymax;
+      threadArgsArr[i].threadMax = max;
+      
+      // calculate the pixels that apply for this iteration of the band
+      threadArgsArr[i].heightBottom = 0 + ( i * baseHeight );
+      threadArgsArr[i].heightTop = 0 + ( (i+1) * baseHeight ) - 1 ;
+      if( i == threadsToUse - 1 )
+      {
+        threadArgsArr[i].heightTop = threadArgsArr[i].heightTop + modRemainder ;
+      }
 
     }
   }

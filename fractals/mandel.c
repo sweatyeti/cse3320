@@ -170,7 +170,8 @@ int main( int argc, char *argv[] )
     return 1;
   }
 
-  return 0;
+  pthread_exit(NULL);
+  exit(EXIT_SUCCESS);
 }
 
 /*
@@ -289,6 +290,7 @@ void computeImage( struct bitmap *bm, double xmin, double xmax, double ymin, dou
 void * computeBands( void * args )
 {
   printf("in compute bands (should see this the same # times as there are threads)\n");
+  //sleep(2);
   // re-cast the struct holding the parameters
   struct bandCreationParams *params = args;
 
@@ -304,20 +306,21 @@ void * computeBands( void * args )
   int totalHeight = params->bmpTotalHeight;
   int heightLowerBound = params->bandHeightBottom;
   int heightUpperBound = params->bandHeightTop;
-  //sleep(2);
 
   if ( multithreading )
   {
     // 
-    //printf("unlocked\n");
+    printf("%f ", xmin);
+    
     pthread_mutex_lock(&threadCountMutex);
-    printf("locked\n");
+    printf("thread count mutex locked\n");
     runningThreads++;
     if(DBG)
     {
       printf("DEBUG: computeBands(): running threads count = %d\n",runningThreads);
     }
     pthread_mutex_unlock(&threadCountMutex);
+    printf("thread count mutex unlocked\n");
 
     if(DBG)
     {
@@ -345,9 +348,11 @@ void * computeBands( void * args )
       if( multithreading )
       {
         pthread_mutex_lock(&bmpMutex);
+        printf("bmpMutex locked\n");
         printf("%d %d,",i,j );
         bitmap_set(bm,i,j,iters);
         pthread_mutex_unlock(&bmpMutex);
+        printf("bmpMutex locked\n");
       }
       else
       {

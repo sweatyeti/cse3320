@@ -24,7 +24,7 @@
 #include <unistd.h>
 
 // create the debug constant to enable/disable debug output
-const bool DBG = false;
+const bool DBG = true;
 
 // this struct holds the arguments that will get passed to the computeBands function
 struct bandCreationParams{
@@ -190,11 +190,15 @@ void computeImage( struct bitmap *bm, double xmin, double xmax, double ymin, dou
   {
     // multithreaded
 
-    // instantiate the array that will hold all struct pointers for 
-    // computeBands() parameters
-    //struct bandCreationParams multithreadedArgsArr[threadsToUse];
+    if(DBG)
+    {
+      printf("DEBUG: computeImage(): using multithreading..\n");
+    }
+
+    // instantiate and allocate memory for the array that will hold all  
+    // struct pointers for computeBands() parameters
     struct bandCreationParams * multithreadedArgsArr;
-    multithreadedArgsArr = calloc(threadsToUse, sizeof(struct bandCreationParams));
+    multithreadedArgsArr = (struct bandCreationParams *) calloc(threadsToUse, sizeof(struct bandCreationParams));
 
     // since the number of threads may not cleanly divide the number of 
     // height pixels, store the modulus of them.
@@ -230,7 +234,7 @@ void computeImage( struct bitmap *bm, double xmin, double xmax, double ymin, dou
       multithreadedArgsArr[i].bandHeightBottom = 0 + ( i * baseHeight );
       if(DBG)
       {
-        printf("DEBUG: multithreaded computeImage(): band %d height bottom bound = %d\n", i, multithreadedArgsArr[i].bandHeightBottom);
+        printf("DEBUG: computeImage(): band %d height bottom bound = %d\n", i, multithreadedArgsArr[i].bandHeightBottom);
       }
 
       // the upper bound can be thought of as the lower bound of the next band (the i+1), minus 1 ...
@@ -245,7 +249,7 @@ void computeImage( struct bitmap *bm, double xmin, double xmax, double ymin, dou
 
       if(DBG)
       {
-        printf("DEBUG: multithreaded computeImage(): band %d height upper bound = %d\n", i, multithreadedArgsArr[i].bandHeightTop);
+        printf("DEBUG: computeImage(): band %d height upper bound = %d\n", i, multithreadedArgsArr[i].bandHeightTop);
       }
 
       pthread_t tid;
@@ -262,12 +266,16 @@ void computeImage( struct bitmap *bm, double xmin, double xmax, double ymin, dou
         }
         exit(EXIT_FAILURE);
       }
-
     } // for
   } // if( threadsToUse > 1 )
   else
   {
     // single-threaded
+
+    if(DBG)
+    {
+      printf("DEBUG: computeImage(): using single threading..\n");
+    }
 
     struct bandCreationParams singleThreadArgs;
 
@@ -287,13 +295,18 @@ void computeImage( struct bitmap *bm, double xmin, double xmax, double ymin, dou
 
   } // else
 
+  if(DBG)
+  {
+    printf("DEBUG: computeImage() exiting..\n");
+  }
+
 }
 
 void * computeBands( void * args )
 {
   if(DBG)
   {
-    printf("DEBUG: computeBands(): should see this the same # times as there are threads\n");
+    printf("DEBUG: computeBands() starting...\n");
   }
   
   //sleep(2);
@@ -378,16 +391,22 @@ void * computeBands( void * args )
 
   if( multithreading )
   {
-    // 
+    int runningThreadsTemp = 0;
     pthread_mutex_lock(&threadCountMutex);
     runningThreads--;
+    runningThreadsTemp = runningThreads;
+    pthread_mutex_unlock(&threadCountMutex);
     if(DBG)
     {
-      printf("DEBUG: computeBands(): running threads count = %d\n",runningThreads);
+      printf("DEBUG: computeBands(): running threads count = %d\n",runningThreadsTemp);
+      printf("DEBUG: computeBands() thread exiting..\n");
     }
-    pthread_mutex_unlock(&threadCountMutex);
+    pthread_exit(0);
+  }
 
-    pthread_exit(NULL);
+  if(DBG)
+  {
+    printf("DEBUG: computeBands() exiting..\n");
   }
 
   return NULL;

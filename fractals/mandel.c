@@ -192,7 +192,9 @@ void computeImage( struct bitmap *bm, double xmin, double xmax, double ymin, dou
 
     // instantiate the array that will hold all struct pointers for 
     // computeBands() parameters
-    struct bandCreationParams multithreadedArgsArr[threadsToUse];
+    //struct bandCreationParams multithreadedArgsArr[threadsToUse];
+    struct bandCreationParams * multithreadedArgsArr;
+    multithreadedArgsArr = calloc(threadsToUse, sizeof(struct bandCreationParams));
 
     // since the number of threads may not cleanly divide the number of 
     // height pixels, store the modulus of them.
@@ -289,10 +291,14 @@ void computeImage( struct bitmap *bm, double xmin, double xmax, double ymin, dou
 
 void * computeBands( void * args )
 {
-  printf("in compute bands (should see this the same # times as there are threads)\n");
+  if(DBG)
+  {
+    printf("DEBUG: computeBands(): should see this the same # times as there are threads\n");
+  }
+  
   //sleep(2);
   // re-cast the struct holding the parameters
-  struct bandCreationParams *params = args;
+  struct bandCreationParams * params = args;
 
   // save all the params to local variables
   bool multithreading = params->multithreaded;
@@ -309,22 +315,31 @@ void * computeBands( void * args )
 
   if ( multithreading )
   {
-    // 
-    printf("%f ", xmin);
+    if(DBG)
+    {
+      printf("DEBUG: computeBands(): using multithreading\n");
+    }
     
     pthread_mutex_lock(&threadCountMutex);
-    printf("thread count mutex locked\n");
+    //printf("thread count mutex locked\n");
     runningThreads++;
     if(DBG)
     {
       printf("DEBUG: computeBands(): running threads count = %d\n",runningThreads);
     }
     pthread_mutex_unlock(&threadCountMutex);
-    printf("thread count mutex unlocked\n");
+    //printf("thread count mutex unlocked\n");
 
     if(DBG)
     {
       printf("DEBUG: computeBands(): using multithreading, current thread ID = %d\n", (int) pthread_self());
+    }
+  }
+  else
+  {
+    if(DBG)
+    {
+      printf("DEBUG: computeBands(): using single threading\n");
     }
   }
 
@@ -348,11 +363,10 @@ void * computeBands( void * args )
       if( multithreading )
       {
         pthread_mutex_lock(&bmpMutex);
-        printf("bmpMutex locked\n");
-        printf("%d %d,",i,j );
+        //printf("bmpMutex locked\n");
         bitmap_set(bm,i,j,iters);
         pthread_mutex_unlock(&bmpMutex);
-        printf("bmpMutex locked\n");
+        //printf("bmpMutex locked\n");
       }
       else
       {

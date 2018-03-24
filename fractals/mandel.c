@@ -43,7 +43,7 @@ struct bandCreationParams{
   int bandHeightBottom;
   int bandHeightTop;
   bool multithreaded;
-  int tid;
+  int tid; 
 };
 
 // create and initialize the global mutex that controls access to the
@@ -304,6 +304,9 @@ void computeImage( struct bitmap *bm, double xmin, double xmax, double ymin, dou
       }
 
     }
+    // release the threadsArr array memory since we're finished with it
+    free(threadsArr);
+    
   } // if( threadsToUse > 1 )
   else
   {

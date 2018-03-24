@@ -24,7 +24,7 @@
 #include <unistd.h>
 
 // create the debug constant to enable/disable debug output
-const bool DBG = true;
+const bool DBG = false;
 
 // this struct holds the arguments that will get passed to the computeBands function
 struct bandCreationParams{
@@ -39,19 +39,12 @@ struct bandCreationParams{
   int bandHeightBottom;
   int bandHeightTop;
   bool multithreaded;
+  int tid;
 };
 
 // create and initialize the global mutex that controls access to the
 // main bitmap data structure, which controls the associated memory
 pthread_mutex_t bmpMutex = PTHREAD_MUTEX_INITIALIZER;
-
-// this var holds the number of active, running threads, so main() knows then they are all finished
-// it also needs an associated mutex so each thread can access it safely
-int runningThreads = 0;
-pthread_mutex_t threadCountMutex = PTHREAD_MUTEX_INITIALIZER;
-
-// declare the thread attributes variable in case multithreading is used
-pthread_attr_t threadAttr;
 
 // function declarations
 static int iteration_to_color( int i, int max );
@@ -149,41 +142,16 @@ int main( int argc, char *argv[] )
   // this is where all the action happens
   computeImage(bm,xcenter-scale,xcenter+scale,ycenter-scale,ycenter+scale,max,numThreads);
 
-  // if multithreading is used, enter a loop that will continuously check the number
-  // of running threads. The loop will not exit until the counter is zero.
-  if( numThreads > 1)
-  {
-    if(DBG)
-    {
-      printf("DEBUG: main(): waiting for all threads to finish; starting runningThreads loop ...\n");
-    }
-    while(true)
-    {
-      pthread_mutex_lock(&threadCountMutex);
-      if( runningThreads > 0 )
-      {
-        pthread_mutex_unlock(&threadCountMutex);
-        continue;
-      }
-      else
-      {
-        pthread_mutex_unlock(&threadCountMutex);
-        break;
-      }
-    }
-  }
-  
-
   // Save the image in the stated file.
   if(!bitmap_save(bm,outfile)) {
     fprintf(stderr,"mandel: couldn't write to %s: %s\n",outfile,strerror(errno));
-    return 1;
+    exit(EXIT_FAILURE);
   }
 
-  pthread_attr_destroy(&threadAttr);
-  pthread_mutex_destroy(&bmpMutex);
-  pthread_mutex_destroy(&threadCountMutex);
-  pthread_exit(NULL);
+  if(DBG)
+  {
+    printf("DEBUG: main() exiting...\n");
+  }
   exit(EXIT_SUCCESS);
 }
 
@@ -246,29 +214,6 @@ void computeImage( struct bitmap *bm, double xmin, double xmax, double ymin, dou
     // of pixels to calculate per thread
     int baseHeight = evenHeight / threadsToUse;
 
-    // not using joinable threads, so use the struct that configures threads to be detached
-    int threadAttrStatus = 0;
-    threadAttrStatus = pthread_attr_init( &threadAttr );
-    if(threadAttrStatus != 0)
-    {
-      printf("There was an error. Please try again.\n");
-      if(DBG)
-      {
-        printf("ERROR -> computeImage(): pthread_attr_init failed..\n");
-        exit(EXIT_FAILURE);
-      }
-    }
-    threadAttrStatus = pthread_attr_setdetachstate( &threadAttr, PTHREAD_CREATE_DETACHED );
-    if(threadAttrStatus != 0)
-    {
-      printf("There was an error. Please try again.\n");
-      if(DBG)
-      {
-        printf("ERROR -> computeImage(): pthread_attr_setdetachstate failed..\n");
-        exit(EXIT_FAILURE);
-      }
-    }
-
     // allocate memory for the array that holds all the thread IDs
     threadsArr = (pthread_t *) calloc( threadsToUse, sizeof(pthread_t) );
     if( threadsArr == NULL)
@@ -288,6 +233,7 @@ void computeImage( struct bitmap *bm, double xmin, double xmax, double ymin, dou
       // assign all the threadArgs struct values
       multithreadedArgsArr[i].theBitmap = bm;
       multithreadedArgsArr[i].multithreaded = true;
+      multithreadedArgsArr[i].tid = i;
       multithreadedArgsArr[i].bandXMin = xmin;
       multithreadedArgsArr[i].bandXMax = xmax;
       multithreadedArgsArr[i].bandYMin = ymin;
@@ -301,7 +247,7 @@ void computeImage( struct bitmap *bm, double xmin, double xmax, double ymin, dou
       multithreadedArgsArr[i].bandHeightBottom = 0 + ( i * baseHeight );
       if(DBG)
       {
-        printf( "DEBUG: computeImage(): band %d height bottom bound = %d\n", i, multithreadedArgsArr[i].bandHeightBottom );
+        printf( "DEBUG: computeImage(): band/thread %d height bottom bound = %d\n", i, multithreadedArgsArr[i].bandHeightBottom );
       }
 
       // the upper bound can be thought of as the lower bound of the next band (the i+1), minus 1 ...
@@ -319,9 +265,8 @@ void computeImage( struct bitmap *bm, double xmin, double xmax, double ymin, dou
         printf( "DEBUG: computeImage(): band/thread %d height upper bound = %d\n", i, multithreadedArgsArr[i].bandHeightTop );
       }
 
-      //pthread_t tid;
-      // everything is ready, proceed with creating a thread to do the computation work
-      //int returnCode = pthread_create( &tid, &threadAttr, computeBands, (void *) &multithreadedArgsArr[i]);
+      // everything is ready, proceed with creating a thread to do the computation work.
+      // store the TID in the threadsArr array for later joining
       int returnCode = pthread_create( &threadsArr[i], NULL, computeBands, (void *) &multithreadedArgsArr[i]);
 
       // check for non-success return code, exit if so
@@ -371,6 +316,7 @@ void computeImage( struct bitmap *bm, double xmin, double xmax, double ymin, dou
 
     singleThreadArgs.theBitmap = bm;
     singleThreadArgs.multithreaded = false;
+    singleThreadArgs.tid = 0;
     singleThreadArgs.bandXMin = xmin;
     singleThreadArgs.bandXMax = xmax;
     singleThreadArgs.bandYMin = ymin;
@@ -385,6 +331,9 @@ void computeImage( struct bitmap *bm, double xmin, double xmax, double ymin, dou
 
   } // else
 
+  // we no longer need the mutex that locks the bmp memory, destroy it
+  pthread_mutex_destroy(&bmpMutex);
+
   if(DBG)
   {
     printf("DEBUG: computeImage() exiting..\n");
@@ -398,13 +347,13 @@ void * computeBands( void * args )
   {
     printf("DEBUG: computeBands() starting...\n");
   }
-  
-  //sleep(2);
+
   // re-cast the struct holding the parameters
   struct bandCreationParams * params = args;
 
   // save all the params to local variables
   bool multithreading = params->multithreaded;
+  int threadId = params->tid;
   struct bitmap * bm = params->theBitmap;
   double xmin = params->bandXMin;
   double xmax = params->bandXMax;
@@ -420,23 +369,8 @@ void * computeBands( void * args )
   {
     if(DBG)
     {
-      printf("DEBUG: computeBands(): using multithreading\n");
-    }
-    
-    // increment the count of running threads (global variable), and lock the mutex first
-    pthread_mutex_lock(&threadCountMutex);
-    runningThreads++;
-    pthread_mutex_unlock(&threadCountMutex);
-
-    if(DBG)
-    {
-      // lock the runningThreads variable and store it in a temp location so it can be 
-      // unlocked immediately, then printf'ed
-      int runningThreadsIncTemp = 0;
-      pthread_mutex_lock(&threadCountMutex);
-      runningThreadsIncTemp = runningThreads;
-      pthread_mutex_unlock(&threadCountMutex);
-      printf("DEBUG: computeBands(): running threads count=%d, current TID=%d\n",runningThreadsIncTemp,(int) pthread_self());
+      printf( "DEBUG: computeBands(): using multithreading\n" );
+      printf( "DEBUG: computeBands(): current TID=%d\n", threadId );
     }
   }
   else
@@ -480,27 +414,16 @@ void * computeBands( void * args )
 
   if( multithreading )
   {
-    
-    pthread_mutex_lock(&threadCountMutex);
-    runningThreads--;
-    pthread_mutex_unlock(&threadCountMutex);
     if(DBG)
     {
-      // lock the runningThreads variable and store it in a temp location so it can be
-      // unlocked immediately, then printf'ed
-      int runningThreadsDecTemp = 0;
-      pthread_mutex_lock(&threadCountMutex);
-      runningThreadsDecTemp = runningThreads;
-      pthread_mutex_unlock(&threadCountMutex);
-      printf("DEBUG: computeBands(): running threads count = %d\n",runningThreadsDecTemp);
-      printf("DEBUG: computeBands() thread exiting..\n");
+      printf( "DEBUG: computeBands() thread %d: exiting..\n", threadId );
     }
     pthread_exit(0);
   }
 
   if(DBG)
   {
-    printf("DEBUG: computeBands() exiting..\n");
+    printf( "DEBUG: computeBands() exiting..\n" );
   }
 
   return NULL;

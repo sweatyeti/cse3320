@@ -9,6 +9,10 @@
  * Mandel command for the final image (with 3 total threads):
  * ./mandel -s .000025 -y -1.03265 -m 7000 -x -.163013 -W 600 -H 600 -n 3
  * 
+ * TODO: modify code to exit the process more cleanly instead of calling exit(EXIT_FAILURE).
+ *        could return a bool to main(), then have main() determine whether or not to save
+ *        anything, while cleaning up allocated memory before exiting.
+ * 
  */
 
 #include "bitmap.h"
@@ -270,7 +274,7 @@ void computeImage( struct bitmap *bm, double xmin, double xmax, double ymin, dou
       // store the TID in the threadsArr array for later joining
       int returnCode = pthread_create( &threadsArr[i], NULL, computeBands, (void *) &multithreadedArgsArr[i]);
 
-      // check for non-success return code, exit if so
+      // check for non-success return code, alert the user and exit if so
       if( returnCode != 0 )
       {
         printf("There was an issue creating threads, and the program must exit. Please try again.\n");
@@ -380,7 +384,7 @@ void * computeBands( void * args )
     }
   }
   
-  // declare counters for the for loops below...
+  // declare counters for the for loops below
   int i,j;
 
   // For every pixel in the image...
@@ -396,7 +400,7 @@ void * computeBands( void * args )
       int iters = iterations_at_point(x,y,max);
 
       // Set the pixel in the bitmap.
-      // If using multithreading, lock the mutex first since this call alters the bmp memory, 
+      // If using multithreading, lock the mutex first since this call alters the global bmp memory, 
       // which is shared amongst the threads.
       if( multithreading )
       {

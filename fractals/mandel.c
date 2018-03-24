@@ -28,7 +28,7 @@
 #include <unistd.h>
 
 // create the debug constant to enable/disable debug output
-const bool DBG = true;
+const bool DBG = false;
 
 // this struct holds the arguments that will get passed to the computeBands function
 struct bandCreationParams{
@@ -53,7 +53,7 @@ pthread_mutex_t bmpMutex = PTHREAD_MUTEX_INITIALIZER;
 // function declarations
 static int iteration_to_color( int i, int max );
 static int iterations_at_point( double x, double y, int max );
-bool computeImage( struct bitmap *bm, double xmin, double xmax, double ymin, double ymax, int max, int numThreads );
+void computeImage( struct bitmap *bm, double xmin, double xmax, double ymin, double ymax, int max, int numThreads );
 void * computeBands( void * );
 
 void show_help()
@@ -142,20 +142,10 @@ int main( int argc, char *argv[] )
   // Fill it with green, for debugging
   bitmap_reset(bm,MAKE_RGBA(0,255,0,0));
 
-  // Compute the Mandelbrot image - this is where all the action happens
-  // it returns a bool depending on whether or not it was successful
-  bool imageComputed = false;
-  imageComputed = computeImage(bm,xcenter-scale,xcenter+scale,ycenter-scale,ycenter+scale,max,numThreads);
+  // Compute the Mandelbrot image
+  // this is where all the action happens
+  computeImage(bm,xcenter-scale,xcenter+scale,ycenter-scale,ycenter+scale,max,numThreads);
 
-  if( !imageComputed )
-  {
-    printf("There was a problem. Please try again.\n");
-    if(DBG)
-    {
-      printf("ERROR -> main(): computeImage() returned false, no image created...\n");
-    }
-    exit(EXIT_FAILURE);
-  }
   // Save the image in the stated file.
   if(!bitmap_save(bm,outfile)) {
     fprintf(stderr,"mandel: couldn't write to %s: %s\n",outfile,strerror(errno));
@@ -174,7 +164,7 @@ Compute an entire Mandelbrot image, writing each point to the given bitmap.
 Scale the image to the range (xmin-xmax,ymin-ymax), limiting iterations to "max"
 */
 
-bool computeImage( struct bitmap *bm, double xmin, double xmax, double ymin, double ymax, int max, int threadsToUse )
+void computeImage( struct bitmap *bm, double xmin, double xmax, double ymin, double ymax, int max, int threadsToUse )
 {
   if(DBG)
   {
@@ -203,14 +193,15 @@ bool computeImage( struct bitmap *bm, double xmin, double xmax, double ymin, dou
     multithreadedArgsArr = (struct bandCreationParams *) calloc( threadsToUse, sizeof(struct bandCreationParams) );
 
     // check to ensure calloc() was successful by checking for null pointer return
-    // return to main if it failed
+    // exit with failure status if it failed
     if(multithreadedArgsArr == NULL)
     {
+      printf("There was a problem. Please try again.\n");
       if(DBG)
       {
         printf("ERROR -> computeImage(): calloc() for multithreadedArgsArr returned NULL\n");
       }
-      return false;
+      exit(EXIT_FAILURE);
     }
 
     // since the number of threads may not cleanly divide the number of 
@@ -228,15 +219,16 @@ bool computeImage( struct bitmap *bm, double xmin, double xmax, double ymin, dou
     int baseHeight = evenHeight / threadsToUse;
 
     // allocate memory for the array that holds all the thread IDs,
-    // then check to make sure we got it. if not, return to main
+    // then check to make sure we got it. if not, exit the prog
     threadsArr = (pthread_t *) calloc( threadsToUse, sizeof(pthread_t) );
     if( threadsArr == NULL)
     {
+      printf("There was a problem. Please try again.\n");
       if(DBG)
       {
         printf("ERROR -> computeImage(): calloc() for threadsArr returned NULL\n");
       }
-      return false;
+      exit(EXIT_FAILURE);
     }
 
     // start the loop that spins-off threads
@@ -282,16 +274,16 @@ bool computeImage( struct bitmap *bm, double xmin, double xmax, double ymin, dou
       // store the TID in the threadsArr array for later joining
       int returnCode = pthread_create( &threadsArr[i], NULL, computeBands, (void *) &multithreadedArgsArr[i]);
 
-      // check for non-success return code, alert the user and return to main() if so
+      // check for non-success return code, alert the user and exit if so
       if( returnCode != 0 )
       {
-        printf("There was an issue creating threads, and the program must exit.\n");
+        printf("There was an issue creating threads, and the program must exit. Please try again.\n");
         printf("This is often a transient error, so it will most likely work without issue when retrying.\n");
         if(DBG)
         {
           printf( "ERROR -> computeImage(): pthread_create return code = %d: %s.. exiting...\n", returnCode, strerror(returnCode) );
         }
-        return false;
+        exit(EXIT_FAILURE);
       }
     } // for
 
@@ -314,7 +306,7 @@ bool computeImage( struct bitmap *bm, double xmin, double xmax, double ymin, dou
     }
     // release the threadsArr array memory since we're finished with it
     free(threadsArr);
-
+    
   } // if( threadsToUse > 1 )
   else
   {
@@ -339,11 +331,8 @@ bool computeImage( struct bitmap *bm, double xmin, double xmax, double ymin, dou
     singleThreadArgs.bandMax = max;
     singleThreadArgs.bandWidth = width;
     singleThreadArgs.bandHeightBottom = 0;
+    singleThreadArgs.bandHeightTop = totalHeight;
     singleThreadArgs.bmpTotalHeight = totalHeight;
-    // computeBands() expects bandHeightTop to be the top of the image based on a zero index (i.e. 0-499 instead of 1-500),
-    // so take our totalHeight and subtract one so the amount is correct
-    singleThreadArgs.bandHeightTop = totalHeight-1;
-    
 
     // since the same computeBands is used in both single and multithreading scenarios, 
     // need to pass the address of the struct to it. This is so another method just for 
@@ -359,8 +348,6 @@ bool computeImage( struct bitmap *bm, double xmin, double xmax, double ymin, dou
   {
     printf("DEBUG: computeImage() exiting..\n");
   }
-
-  return true;
 
 } // computeImage()
 

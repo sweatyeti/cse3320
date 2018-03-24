@@ -214,7 +214,8 @@ void computeImage( struct bitmap *bm, double xmin, double xmax, double ymin, dou
     // of pixels to calculate per thread
     int baseHeight = evenHeight / threadsToUse;
 
-    // allocate memory for the array that holds all the thread IDs
+    // allocate memory for the array that holds all the thread IDs,
+    // then check to make sure we got it. if not, exit the prog
     threadsArr = (pthread_t *) calloc( threadsToUse, sizeof(pthread_t) );
     if( threadsArr == NULL)
     {
@@ -309,6 +310,8 @@ void computeImage( struct bitmap *bm, double xmin, double xmax, double ymin, dou
       printf("DEBUG: computeImage(): using single threading..\n");
     }
 
+    // declare and initialize the struct and its fields, to be passed to computeBands
+    // nothing fancy here since we're not using multithreading 
     struct bandCreationParams singleThreadArgs;
 
     singleThreadArgs.theBitmap = bm;
@@ -324,6 +327,9 @@ void computeImage( struct bitmap *bm, double xmin, double xmax, double ymin, dou
     singleThreadArgs.bandHeightTop = totalHeight;
     singleThreadArgs.bmpTotalHeight = totalHeight;
 
+    // since the same computeBands is used in both single and multithreading scenarios, 
+    // need to pass the address of the struct to it. This is so another method just for 
+    // multithreading didn't need to be created.
     computeBands( (void *) &singleThreadArgs );
 
   } // else
@@ -362,21 +368,19 @@ void * computeBands( void * args )
   int heightLowerBound = params->bandHeightBottom;
   int heightUpperBound = params->bandHeightTop;
 
-  if ( multithreading )
+  if(DBG)
   {
-    if(DBG)
+    if ( multithreading )
     {
       printf( "multithreading; current TID=%d\n", threadId );
     }
-  }
-  else
-  {
-    if(DBG)
+    else
     {
       printf( "single threading\n" );
     }
   }
-
+  
+  // declare counters for the for loops below...
   int i,j;
 
   // For every pixel in the image...
@@ -408,6 +412,7 @@ void * computeBands( void * args )
     } // inner for
   } // outer for
 
+  // the calculation is finished at this point, so exit the thread if using multithreading
   if( multithreading )
   {
     if(DBG)
@@ -422,6 +427,7 @@ void * computeBands( void * args )
     printf( "DEBUG: computeBands() exiting..\n" );
   }
 
+  // only singlethreading scenarios get to this point, so return the null ptr
   return NULL;
 }
 

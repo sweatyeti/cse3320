@@ -145,6 +145,8 @@ int main( int argc, char *argv[] )
   // Compute the Mandelbrot image
   computeImage(bm,xcenter-scale,xcenter+scale,ycenter-scale,ycenter+scale,max,numThreads);
 
+  // if multithreading is used, enter a loop that will continuously check the number
+  // of running threads. The loop will not exit untli the counter is zero.
   if( numThreads > 1)
   {
     while(true)
@@ -170,6 +172,8 @@ int main( int argc, char *argv[] )
     return 1;
   }
 
+  pthread_mutex_destroy(&bmpMutex);
+  pthread_mutex_destroy(&threadCountMutex);
   pthread_exit(NULL);
   exit(EXIT_SUCCESS);
 }
@@ -198,7 +202,22 @@ void computeImage( struct bitmap *bm, double xmin, double xmax, double ymin, dou
     // instantiate and allocate memory for the array that will hold all  
     // struct pointers for computeBands() parameters
     struct bandCreationParams * multithreadedArgsArr;
-    multithreadedArgsArr = (struct bandCreationParams *) calloc(threadsToUse, sizeof(struct bandCreationParams));
+    multithreadedArgsArr = calloc(threadsToUse, sizeof(struct bandCreationParams));
+
+    // check to ensure calloc() was successful by checking for null pointer return
+    // exit with failure status if so
+    if(multithreadedArgsArr == NULL)
+    {
+      printf("There was a problem. Please try again.\n");
+      
+      if(DBG)
+      {
+        printf("ERROR -> computeImage(): calloc() returned NULL\n");
+      }
+
+      exit(EXIT_FAILURE);
+
+    }
 
     // since the number of threads may not cleanly divide the number of 
     // height pixels, store the modulus of them.
@@ -333,19 +352,20 @@ void * computeBands( void * args )
       printf("DEBUG: computeBands(): using multithreading\n");
     }
     
+    // increment the count of running threads (global variable), and lock the mutex first
     pthread_mutex_lock(&threadCountMutex);
-    //printf("thread count mutex locked\n");
     runningThreads++;
-    if(DBG)
-    {
-      printf("DEBUG: computeBands(): running threads count = %d\n",runningThreads);
-    }
     pthread_mutex_unlock(&threadCountMutex);
-    //printf("thread count mutex unlocked\n");
 
     if(DBG)
     {
-      printf("DEBUG: computeBands(): using multithreading, current thread ID = %d\n", (int) pthread_self());
+      // lock the runningThreads variable and store it in a temp location so it can be 
+      // unlocked immediately, then printf'ed
+      int runningThreadsIncTemp = 0;
+      pthread_mutex_lock(&threadCountMutex);
+      runningThreadsIncTemp = runningThreads;
+      pthread_mutex_unlock(&threadCountMutex);
+      printf("DEBUG: computeBands(): running threads count=%d, current TID=%d\n",runningThreadsIncTemp,(int) pthread_self());
     }
   }
   else
@@ -376,10 +396,8 @@ void * computeBands( void * args )
       if( multithreading )
       {
         pthread_mutex_lock(&bmpMutex);
-        //printf("bmpMutex locked\n");
         bitmap_set(bm,i,j,iters);
         pthread_mutex_unlock(&bmpMutex);
-        //printf("bmpMutex locked\n");
       }
       else
       {
@@ -391,14 +409,19 @@ void * computeBands( void * args )
 
   if( multithreading )
   {
-    int runningThreadsTemp = 0;
+    
     pthread_mutex_lock(&threadCountMutex);
     runningThreads--;
-    runningThreadsTemp = runningThreads;
     pthread_mutex_unlock(&threadCountMutex);
     if(DBG)
     {
-      printf("DEBUG: computeBands(): running threads count = %d\n",runningThreadsTemp);
+      // lock the runningThreads variable and store it in a temp location so it can be
+      // unlocked immediately, then printf'ed
+      int runningThreadsDecTemp = 0;
+      pthread_mutex_lock(&threadCountMutex);
+      runningThreadsDecTemp = runningThreads;
+      pthread_mutex_unlock(&threadCountMutex);
+      printf("DEBUG: computeBands(): running threads count = %d\n",runningThreadsDecTemp);
       printf("DEBUG: computeBands() thread exiting..\n");
     }
     pthread_exit(0);

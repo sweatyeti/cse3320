@@ -50,9 +50,12 @@ pthread_mutex_t bmpMutex = PTHREAD_MUTEX_INITIALIZER;
 int runningThreads = 0;
 pthread_mutex_t threadCountMutex = PTHREAD_MUTEX_INITIALIZER;
 
+// declare the thread attributes variable in case multithreading is used
+pthread_attr_t threadAttr;
+
 // function declarations
-int iteration_to_color( int i, int max );
-int iterations_at_point( double x, double y, int max );
+static int iteration_to_color( int i, int max );
+static int iterations_at_point( double x, double y, int max );
 void computeImage( struct bitmap *bm, double xmin, double xmax, double ymin, double ymax, int max, int numThreads );
 void * computeBands( void * );
 
@@ -139,16 +142,21 @@ int main( int argc, char *argv[] )
   // Create a bitmap of the appropriate size.
   struct bitmap *bm = bitmap_create(image_width,image_height);
 
-  // Fill it with a dark blue, for debugging
-  bitmap_reset(bm,MAKE_RGBA(0,0,255,0));
+  // Fill it with green, for debugging
+  bitmap_reset(bm,MAKE_RGBA(0,255,0,0));
 
   // Compute the Mandelbrot image
+  // this is where all the action happens
   computeImage(bm,xcenter-scale,xcenter+scale,ycenter-scale,ycenter+scale,max,numThreads);
 
   // if multithreading is used, enter a loop that will continuously check the number
-  // of running threads. The loop will not exit untli the counter is zero.
+  // of running threads. The loop will not exit until the counter is zero.
   if( numThreads > 1)
   {
+    if(DBG)
+    {
+      printf("DEBUG: main(): waiting for all threads to finish; starting runningThreads loop ...\n");
+    }
     while(true)
     {
       pthread_mutex_lock(&threadCountMutex);
@@ -172,6 +180,7 @@ int main( int argc, char *argv[] )
     return 1;
   }
 
+  pthread_attr_destroy(&threadAttr);
   pthread_mutex_destroy(&bmpMutex);
   pthread_mutex_destroy(&threadCountMutex);
   pthread_exit(NULL);
@@ -185,10 +194,17 @@ Scale the image to the range (xmin-xmax,ymin-ymax), limiting iterations to "max"
 
 void computeImage( struct bitmap *bm, double xmin, double xmax, double ymin, double ymax, int max, int threadsToUse )
 {
+  if(DBG)
+  {
+    printf("DEBUG: computeImage() starting...\n");
+  }
   // we are only changing how the image is built with respect to 
   // height, not width. So, the width is constant.
   int width = bitmap_width(bm);
   int totalHeight = bitmap_height(bm);
+
+  // declare a pointer var to hold all thread IDs just in case multithreading is used (memory will get allocated later)
+  pthread_t * threadsArr;
 
   if( threadsToUse > 1 )
   {
@@ -196,27 +212,24 @@ void computeImage( struct bitmap *bm, double xmin, double xmax, double ymin, dou
 
     if(DBG)
     {
-      printf("DEBUG: computeImage(): using multithreading..\n");
+      printf("DEBUG: computeImage(): using multithreading with %d threads..\n", threadsToUse);
     }
 
     // instantiate and allocate memory for the array that will hold all  
     // struct pointers for computeBands() parameters
     struct bandCreationParams * multithreadedArgsArr;
-    multithreadedArgsArr = calloc(threadsToUse, sizeof(struct bandCreationParams));
+    multithreadedArgsArr = (struct bandCreationParams *) calloc( threadsToUse, sizeof(struct bandCreationParams) );
 
     // check to ensure calloc() was successful by checking for null pointer return
-    // exit with failure status if so
+    // exit with failure status if it failed
     if(multithreadedArgsArr == NULL)
     {
       printf("There was a problem. Please try again.\n");
-      
       if(DBG)
       {
-        printf("ERROR -> computeImage(): calloc() returned NULL\n");
+        printf("ERROR -> computeImage(): calloc() for multithreadedArgsArr returned NULL\n");
       }
-
       exit(EXIT_FAILURE);
-
     }
 
     // since the number of threads may not cleanly divide the number of 
@@ -232,6 +245,41 @@ void computeImage( struct bitmap *bm, double xmin, double xmax, double ymin, dou
     // baseHeight will be the main variable to use when determining the bands 
     // of pixels to calculate per thread
     int baseHeight = evenHeight / threadsToUse;
+
+    // not using joinable threads, so use the struct that configures threads to be detached
+    int threadAttrStatus = 0;
+    threadAttrStatus = pthread_attr_init( &threadAttr );
+    if(threadAttrStatus != 0)
+    {
+      printf("There was an error. Please try again.\n");
+      if(DBG)
+      {
+        printf("ERROR -> computeImage(): pthread_attr_init failed..\n");
+        exit(EXIT_FAILURE);
+      }
+    }
+    threadAttrStatus = pthread_attr_setdetachstate( &threadAttr, PTHREAD_CREATE_DETACHED );
+    if(threadAttrStatus != 0)
+    {
+      printf("There was an error. Please try again.\n");
+      if(DBG)
+      {
+        printf("ERROR -> computeImage(): pthread_attr_setdetachstate failed..\n");
+        exit(EXIT_FAILURE);
+      }
+    }
+
+    // allocate memory for the array that holds all the thread IDs
+    threadsArr = (pthread_t *) calloc( threadsToUse, sizeof(pthread_t) );
+    if( threadsArr == NULL)
+    {
+      printf("There was a problem. Please try again.\n");
+      if(DBG)
+      {
+        printf("ERROR -> computeImage(): calloc() for threadsArr returned NULL\n");
+      }
+      exit(EXIT_FAILURE);
+    }
 
     // start the loop that spins-off threads
     int i;
@@ -253,7 +301,7 @@ void computeImage( struct bitmap *bm, double xmin, double xmax, double ymin, dou
       multithreadedArgsArr[i].bandHeightBottom = 0 + ( i * baseHeight );
       if(DBG)
       {
-        printf("DEBUG: computeImage(): band %d height bottom bound = %d\n", i, multithreadedArgsArr[i].bandHeightBottom);
+        printf( "DEBUG: computeImage(): band %d height bottom bound = %d\n", i, multithreadedArgsArr[i].bandHeightBottom );
       }
 
       // the upper bound can be thought of as the lower bound of the next band (the i+1), minus 1 ...
@@ -268,12 +316,13 @@ void computeImage( struct bitmap *bm, double xmin, double xmax, double ymin, dou
 
       if(DBG)
       {
-        printf("DEBUG: computeImage(): band %d height upper bound = %d\n", i, multithreadedArgsArr[i].bandHeightTop);
+        printf( "DEBUG: computeImage(): band/thread %d height upper bound = %d\n", i, multithreadedArgsArr[i].bandHeightTop );
       }
 
-      pthread_t tid;
+      //pthread_t tid;
       // everything is ready, proceed with creating a thread to do the computation work
-      int returnCode = pthread_create( &tid, NULL, computeBands, (void *) &multithreadedArgsArr[i]);
+      //int returnCode = pthread_create( &tid, &threadAttr, computeBands, (void *) &multithreadedArgsArr[i]);
+      int returnCode = pthread_create( &threadsArr[i], NULL, computeBands, (void *) &multithreadedArgsArr[i]);
 
       // check for non-success return code, exit if so
       if( returnCode != 0 )
@@ -281,11 +330,33 @@ void computeImage( struct bitmap *bm, double xmin, double xmax, double ymin, dou
         printf("There was an issue creating threads, and the program must exit. Please try again.\n");
         if(DBG)
         {
-          printf("ERROR -> computeImage(): pthread_create return code = %d: %s.. exiting...\n", returnCode, strerror(returnCode) );
+          printf( "ERROR -> computeImage(): pthread_create return code = %d: %s.. exiting...\n", returnCode, strerror(returnCode) );
         }
         exit(EXIT_FAILURE);
       }
     } // for
+
+    // all threads have been created, or asked to be created, so wait on them before returning
+    int k;
+    int joinResult;
+    void * threadExitStatus;
+    for( k=0 ; k<threadsToUse ; k++ )
+    {
+      joinResult = pthread_join( threadsArr[k], &threadExitStatus );
+      if( DBG && joinResult != 0 )
+      {
+        printf( "ERROR -> computeImage(): pthread_join returned error %d: %s..\n", joinResult, strerror(joinResult) );
+      }
+
+      if(DBG)
+      {
+        printf( "DEBUG: computeImage(): thread %d exited with status '%s'..\n", k, (char *) threadExitStatus );
+      }
+    }
+
+    free(threadExitStatus);
+
+
   } // if( threadsToUse > 1 )
   else
   {
@@ -319,7 +390,7 @@ void computeImage( struct bitmap *bm, double xmin, double xmax, double ymin, dou
     printf("DEBUG: computeImage() exiting..\n");
   }
 
-}
+} // computeImage()
 
 void * computeBands( void * args )
 {
@@ -440,7 +511,7 @@ Return the number of iterations at point x, y
 in the Mandelbrot space, up to a maximum of max.
 */
 
-int iterations_at_point( double x, double y, int max )
+static int iterations_at_point( double x, double y, int max )
 {
   double x0 = x;
   double y0 = y;
@@ -467,7 +538,7 @@ Here, we just scale to gray with a maximum of imax.
 Modify this function to make more interesting colors.
 */
 
-int iteration_to_color( int i, int max )
+static int iteration_to_color( int i, int max )
 {
   int gray = 255*i/max;
   return MAKE_RGBA(gray,gray,gray,0);

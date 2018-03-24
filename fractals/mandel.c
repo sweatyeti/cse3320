@@ -273,6 +273,7 @@ void computeImage( struct bitmap *bm, double xmin, double xmax, double ymin, dou
       if( returnCode != 0 )
       {
         printf("There was an issue creating threads, and the program must exit. Please try again.\n");
+        printf("This is often a transient error, so it will most likely work without issue when retrying.\n");
         if(DBG)
         {
           printf( "ERROR -> computeImage(): pthread_create return code = %d: %s.. exiting...\n", returnCode, strerror(returnCode) );
@@ -284,24 +285,20 @@ void computeImage( struct bitmap *bm, double xmin, double xmax, double ymin, dou
     // all threads have been created, or asked to be created, so wait on them before returning
     int k;
     int joinResult;
-    void * threadExitStatus;
     for( k=0 ; k<threadsToUse ; k++ )
     {
-      joinResult = pthread_join( threadsArr[k], &threadExitStatus );
+      joinResult = pthread_join( threadsArr[k], NULL );
       if( DBG && joinResult != 0 )
       {
-        printf( "ERROR -> computeImage(): pthread_join returned error %d: %s..\n", joinResult, strerror(joinResult) );
+        printf( "ERROR -> computeImage(): pthread_join returned error %d: %s...\n", joinResult, strerror(joinResult) );
       }
 
       if(DBG)
       {
-        printf( "DEBUG: computeImage(): thread %d exited with status '%s'..\n", k, (char *) threadExitStatus );
+        printf( "DEBUG: computeImage(): thread %d exited... \n", k );
       }
+
     }
-
-    free(threadExitStatus);
-
-
   } // if( threadsToUse > 1 )
   else
   {
@@ -345,7 +342,7 @@ void * computeBands( void * args )
 {
   if(DBG)
   {
-    printf("DEBUG: computeBands() starting...\n");
+    printf("DEBUG: computeBands() starting with ");
   }
 
   // re-cast the struct holding the parameters
@@ -369,15 +366,14 @@ void * computeBands( void * args )
   {
     if(DBG)
     {
-      printf( "DEBUG: computeBands(): using multithreading\n" );
-      printf( "DEBUG: computeBands(): current TID=%d\n", threadId );
+      printf( "multithreading; current TID=%d\n", threadId );
     }
   }
   else
   {
     if(DBG)
     {
-      printf("DEBUG: computeBands(): using single threading\n");
+      printf( "single threading\n" );
     }
   }
 
@@ -396,7 +392,7 @@ void * computeBands( void * args )
       int iters = iterations_at_point(x,y,max);
 
       // Set the pixel in the bitmap.
-      // If using multithreading, the lock the mutex first since this call alters the bmp memory, 
+      // If using multithreading, lock the mutex first since this call alters the bmp memory, 
       // which is shared amongst the threads.
       if( multithreading )
       {
@@ -418,7 +414,7 @@ void * computeBands( void * args )
     {
       printf( "DEBUG: computeBands() thread %d: exiting..\n", threadId );
     }
-    pthread_exit(0);
+    pthread_exit(NULL);
   }
 
   if(DBG)

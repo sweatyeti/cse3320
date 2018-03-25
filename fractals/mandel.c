@@ -9,10 +9,6 @@
  * Mandel command for the final image (with 3 total threads):
  * ./mandel -s .000025 -y -1.03265 -m 7000 -x -.163013 -W 600 -H 600 -n 3
  * 
- * TODO: modify code to exit the process more cleanly instead of calling exit(EXIT_FAILURE).
- *        could return a bool to main(), then have main() determine whether or not to save
- *        anything, while cleaning up allocated memory before exiting.
- * 
  */
 
 #include "bitmap.h"
@@ -26,9 +22,13 @@
 #include <pthread.h>
 #include <stdbool.h>
 #include <unistd.h>
+#include <sys/time.h>
 
-// create the debug constant to enable/disable debug output
-const bool DBG = true;
+// create the bool constant to enable/disable debug output
+const bool DBG = false;
+
+// create the bool constant to enable/disable timing output
+const bool TIMING = false;
 
 // this struct holds the arguments that will get passed to the computeBands function
 struct bandCreationParams{
@@ -77,7 +77,9 @@ void show_help()
 
 int main( int argc, char *argv[] )
 {
-  char c;
+  // declare the vars that hold time values, just in case timing has been enabled
+  struct timeval computeStart;
+  struct timeval computeEnd;
 
   // These are the default configuration values used
   // if no command line arguments are given.
@@ -93,7 +95,7 @@ int main( int argc, char *argv[] )
 
   // For each command line argument given,
   // override the appropriate configuration value.
-
+  char c;
   while((c = getopt(argc,argv,"x:y:s:W:H:m:o:n:h"))!=-1) {
     switch(c) {
       case 'x':
@@ -142,6 +144,12 @@ int main( int argc, char *argv[] )
   // Fill it with green, for debugging
   bitmap_reset(bm,MAKE_RGBA(0,255,0,0));
 
+  // if this is being timed, get the time value before computation and store it
+  if(TIMING)
+  {
+    gettimeofday( &computeStart, NULL );
+  }
+
   // Compute the Mandelbrot image - this is where all the action happens
   // it returns a bool depending on whether or not it was successful
   bool imageComputed = false;
@@ -156,10 +164,24 @@ int main( int argc, char *argv[] )
     }
     exit(EXIT_FAILURE);
   }
+
+  // if this is being timed, get the time value after computation and store it
+  if(TIMING)
+  {
+    gettimeofday( &computeEnd, NULL );
+  }
+
   // Save the image in the stated file.
   if(!bitmap_save(bm,outfile)) {
     fprintf(stderr,"mandel: couldn't write to %s: %s\n",outfile,strerror(errno));
     exit(EXIT_FAILURE);
+  }
+
+  // if this is being timed, calculate & output the time taken in microseconds to run the computation
+  if(TIMING)
+  {
+    int computationTime = ( ( computeEnd.tv_sec - computeStart.tv_sec ) * 1000000 + ( computeEnd.tv_usec - computeStart.tv_usec ) );
+    printf( "mandel: Computed time taken (in usec): %d\n", computationTime );
   }
 
   if(DBG)

@@ -21,6 +21,7 @@
 #include <string.h>
 #include <stdbool.h>
 #include <float.h>
+#include <sys/time.h>
 
 // how many total times to run the mandel program.
 // this can be tweaked to change the number of output images.
@@ -42,6 +43,9 @@ char * mandelParamH = "600";
 // create the debug constant to enable/disable debug output
 const bool DBG = false;
 
+// create the bool constant to enable/disable timing output
+const bool TIMING = true;
+
 // function declarations (implementations after main())
 bool validCommand( int, char * );
 void runSeries( int );
@@ -56,8 +60,27 @@ int main ( int argc, char * argv[] )
         exit(EXIT_FAILURE);
     }
 
+    // declare the vars that hold time values, just in case timing has been enabled
+    struct timeval seriesStart;
+    struct timeval seriesEnd;
+
+    // if this is being timed, get the time value before the series and store it
+    if(TIMING)
+    {
+      gettimeofday( &seriesStart, NULL );
+    }
+
     // user command has been validated, so start the series
     runSeries( atoi( argv[1] ) );
+
+    // if this is being timed, get the time value after series and store it
+    if(TIMING)
+    {
+      gettimeofday( &seriesEnd, NULL );
+      // if this is being timed, calculate & output the time taken in microseconds to run the computation
+      int computationTime = ( ( seriesEnd.tv_sec - seriesStart.tv_sec ) * 1000000 + ( seriesEnd.tv_usec - seriesStart.tv_usec ) );
+      printf( "mandelseries: Computed time taken (in usec): %d\n", computationTime );
+    }
 
     if(DBG)
     {

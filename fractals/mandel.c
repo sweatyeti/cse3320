@@ -24,11 +24,11 @@
 #include <unistd.h>
 #include <sys/time.h>
 
-// create the bool constant to enable/disable debug output
-const bool DBG = false;
+// enable/disable debug output
+bool DBG = false;
 
-// create the bool constant to enable/disable timing output
-const bool TIMING = false;
+// enable/disable timing output
+bool TIMING = false;
 
 // this struct holds the arguments that will get passed to the computeBands function
 struct bandCreationParams{
@@ -96,7 +96,7 @@ int main( int argc, char *argv[] )
   // For each command line argument given,
   // override the appropriate configuration value.
   char c;
-  while((c = getopt(argc,argv,"x:y:s:W:H:m:o:n:h"))!=-1) {
+  while((c = getopt(argc,argv,"x:y:s:W:H:m:o:n:hdt"))!=-1) {
     switch(c) {
       case 'x':
         xcenter = atof(optarg);
@@ -121,6 +121,12 @@ int main( int argc, char *argv[] )
         break;
       case 'n':
         numThreads = atoi(optarg);
+        break;
+      case 'd':
+        DBG = true;
+        break;
+      case 't':
+        TIMING = true;
         break;
       case 'h':
         show_help();

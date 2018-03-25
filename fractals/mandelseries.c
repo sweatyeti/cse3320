@@ -40,11 +40,11 @@ char * mandelParamM = "7000";
 char * mandelParamW = "600";
 char * mandelParamH = "600";
 
-// create the debug constant to enable/disable debug output
-const bool DBG = false;
+// enable/disable debug output
+bool DBG = false;
 
-// create the bool constant to enable/disable timing output
-const bool TIMING = true;
+// enable/disable timing output
+bool TIMING = true;
 
 // function declarations (implementations after main())
 bool validCommand( int, char * );

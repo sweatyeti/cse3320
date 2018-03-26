@@ -283,7 +283,7 @@ void runSeries( int maxRunningProcs )
           // passing-in the name of the mandel file and the argument list
           // we just built
           errno = 0;
-          execvp("mandel", mandelArgList);
+          execvp("./mandel", mandelArgList);
 
           if(DBG || errno != 0)
           {

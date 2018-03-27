@@ -195,27 +195,47 @@ int main( int argc, char *argv[] )
     printf("DEBUG: main() exiting...\n");
   }
   exit(EXIT_SUCCESS);
-}
+} // main()
 
 /*
-Compute an entire Mandelbrot image, writing each point to the given bitmap.
-Scale the image to the range (xmin-xmax,ymin-ymax), limiting iterations to "max"
-*/
-
+ * function: 
+ *  computeImage
+ * 
+ * description: 
+ *  Called by main() to start the process of creating the pixels and setting the memory for the bmp output.
+ *  It checks if the user requested single- or multi-threading, and instantiates the apropriate number of 
+ *    bandCreationParams structs to hold the information needed so computeBands can generate the actual image pixels.
+ *  This is the function that creates threads, if needed, and wait for those threads to complete before returning 
+ *    to main().
+ * 
+ * parameters:
+ *  struct bitmap *bm: the pointer to the space allocated for the bitmap
+ *  double xmin: the scaled left-bound of the requested image on the x-axis
+ *  double xmax: the scaled right-bound of the requested image on the x-axis
+ *  double ymin: the scaled lower-bound of the requested image on the y-axis
+ *  double ymax: the scaled upper-bound of the requested image on the y-axis
+ *  int max: max # of recurrence relations to iterate
+ *  int threadsToUse: the number of threads to perform the computation
+ * 
+ * returns: 
+ *  bool: true if there were no catastrophic errors during computation, otherwise false
+ */
 bool computeImage( struct bitmap *bm, double xmin, double xmax, double ymin, double ymax, int max, int threadsToUse )
 {
   if(DBG)
   {
     printf("DEBUG: computeImage() starting...\n");
   }
-  // we are only changing how the image is built with respect to 
-  // height, not width. So, the width is constant.
+  
+  // grab the width and height of the image
   int width = bitmap_width(bm);
   int totalHeight = bitmap_height(bm);
 
   // declare a pointer var to hold all thread IDs just in case multithreading is used (memory will get allocated later)
   pthread_t * threadsArr;
 
+  // singlethreading and multithreading are drastically different scenarios, 
+  // so this conditional determines what logic gets executed
   if( threadsToUse > 1 )
   {
     // multithreaded
@@ -340,6 +360,7 @@ bool computeImage( struct bitmap *bm, double xmin, double xmax, double ymin, dou
       }
 
     }
+
     // release the threadsArr array memory since we're finished with it
     free(threadsArr);
 
@@ -374,8 +395,8 @@ bool computeImage( struct bitmap *bm, double xmin, double xmax, double ymin, dou
     
 
     // since the same computeBands is used in both single and multithreading scenarios, 
-    // need to pass the address of the struct to it. This is so another method just for 
-    // multithreading didn't need to be created.
+    // need to pass the address of the struct to it. This is so separate methods for 
+    // multithreading and singlethreading didn't need to be created.
     computeBands( (void *) &singleThreadArgs );
 
   } // else
@@ -391,6 +412,24 @@ bool computeImage( struct bitmap *bm, double xmin, double xmax, double ymin, dou
   return true;
 } // computeImage()
 
+/*
+ * function: 
+ *  computeBands
+ * 
+ * description: 
+ *  This is the function that calls the provided calculation functions and gets the bmp memory set.
+ *  It's called by computeImage for single-threaded operation, and is the entry point for new threads in a
+ *    multithreading scenario.
+ *  If single-threaded, this function generates the whole image.
+ *  If multithreaded, this function generates one section of the image.
+ * 
+ * parameters:
+ *  void * args: void ptr since it's a new thread entry point. The incoming structure is of type 
+ *    bandCreationParams, which contains all the info needed to generate the appropriate pixels of the bmp.
+ * 
+ * returns: 
+ *  void *
+ */
 void * computeBands( void * args )
 {
   if(DBG)
@@ -476,7 +515,7 @@ void * computeBands( void * args )
 
   // only singlethreading scenarios get to this point, so return the null ptr
   return NULL;
-}
+} // computeBands()
 
 /*
 Return the number of iterations at point x, y

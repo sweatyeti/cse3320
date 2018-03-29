@@ -188,7 +188,7 @@ void runSeries( int maxRunningProcs )
       // this logic also is what allows the user to enter an amount of child 
       // processes > how many images will be created, and still work properly.
       // In other words, even if the user requested 60 processes when only 50 are needed,
-      // the logic will now allow any more children to be created once 50 have been reached.
+      // the logic will not allow any more children to be created once 50 have been reached.
       if( bmpCount == maxMandelRuns )
       {
         // at this point, we're just waiting for existing children to finish, 
@@ -330,13 +330,14 @@ void runSeries( int maxRunningProcs )
 
     } // inner while
 
-    // the outer loop waits for any children processes to exit
+    // the outer loop waits for any children processes to exit.
     // once one has exited, we decrement the counter of running children and the 
     // loop continues, at which point the inner loop will be entered and the check 
-    // for how many children are running and how many images have been created.
+    // for how many children are running and how many images have been created will take place
+    // to decide if more need to be created, or if the inner loop exits and returns to this wait()
     wait(NULL);
     runningProcs--;
 
   } // outer while
 
-}
+} // runSeries()

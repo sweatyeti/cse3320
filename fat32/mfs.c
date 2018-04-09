@@ -1,13 +1,192 @@
 #include <stdio.h>
+#include <stdlib.h>
+#include <stdbool.h>
+#include <string.h>
+#include <errno.h>
+
+// enable/disable debug output
+bool DBG = true;
+
+// for visual friendliness, define a new BYTE type, which is really the same as char
+typedef unsigned char BYTE;
+
+/* declare the BPB struct, and tell GCC it's packed so we can read the entire BPB structure
+   in one fell swoop */
+struct imageBPB
+{
+	BYTE BS_jmpBoot[3];				// offset byte 0, size 3 (bytes)
+	BYTE BS_OEMName[8]; 			// offset byte 3, size 8
+	unsigned short BPB_BytesPerSec;	// offset byte 11, size 2
+	BYTE BPB_SecPerClus;			// offset byte 13, size 1
+	unsigned short BPB_RsvdSecCnt;	// offset byte 14, size 2
+	BYTE BPB_NumFATs;				// offset byte 16, size 1
+	unsigned short BPB_RootEndCnt;	// offset byte 17, size 2
+	unsigned short BPB_TotSec16;	// offset byte 19, size 2
+	BYTE BPB_Media;					// offset byte 21, size 1
+	unsigned short BPB_FATSz16;		// offset byte 22, size 2
+	unsigned short BPB_SecPerTrk;	// offset byte 24, size 2
+	unsigned short BPB_NumHeads;	// offset byte 26, size 2
+	unsigned int BPB_HiddSec;		// offset byte 28, size 4
+	unsigned int BPB_TotSec32;		// offset byte 32, size 4
+	unsigned int BPB_FATSz32;		// offset byte 36, size 4
+	unsigned short BPB_ExtFlags;	// offset byte 40, size 2
+	BYTE BPB_FSVer[2];				// offset byte 42, size 2
+	unsigned int BPB_RootClus;		// offset byte 44, size 4
+	unsigned short BPB_FSInfo;		// offset byte 48, size 2
+	unsigned short BPB_BkBootSec;	// offset byte 50, size 2
+	BYTE BPB_Reserved[12];			// offset byte 52, size 12
+	BYTE BS_DrvNum;					// offset byte 64, size 1
+	BYTE BS_Reserved1;				// offset byte 65, size 1
+	BYTE BS_BootSig;				// offset byte 66, size 1
+	unsigned int BS_VolID;			// offset byte 67, size 4
+	char BS_VolLabel[11];			// offset byte 71, size 11
+	char BS_FileSysType[8];			// offset byte 82, size 8
+} __attribute__((__packed__));
+
+// declare the global BPB struct
+struct imageBPB bpb;
+
+// declare the global file pointer
+FILE * fp;
+
+// function declarations
+bool readImageMetadata( void );
+uint LBAToOffset( unsigned long );
+short nextLB( unsigned long );
 
 int main()
 {
-	FILE * fp = fopen("fat32.img", "r");
-	short BPB_BytesPerSec;
+	// reset errno for fopen call
+	errno = 0;
+	// attempt to open the file, bail if failed
+	fp = fopen("fat32.img", "r");
+	if( fp == NULL )
+	{
+		printf("There was an error opening the FAT32 image file. Please try again.\n");
+		if(DBG)
+		{
+			printf("ERROR -> main(): fopen failed with error: %u: %s\n", errno, strerror(errno));
+		}
+		exit(EXIT_FAILURE);
+	}
+
+	if( !readImageMetadata() )
+	{
+		printf("There was a problem reading the opened FAT32 image file. Please try again.\n");
+		fclose(fp);
+		exit(EXIT_FAILURE);
+	}
+
+	printf("BPB_BytesPerSec: '%u'\n", bpb.BPB_BytesPerSec);
+	printf("BPB_TotSec32: '%d'\n", bpb. BPB_TotSec32);
+
+	char volLabel[12]; 
+	strncpy( volLabel, bpb.BS_VolLabel, 11 );
+	volLabel[12] = '\0';
+	printf("BPB_volLabel: '%s'\n", volLabel);
+
+	char fsType[9]; 
+	strncpy( fsType, bpb.BS_FileSysType, 8 );
+	fsType[8] = '\0';
+	printf("BPB_FileSysType: '%s'\n", fsType);
+
+	printf("BPB_SecPerTrk: '%u'\n", bpb.BPB_SecPerTrk);
+
+
+	// close the file
+	fclose(fp);
+
+	exit(EXIT_SUCCESS);
+}
+/*
+ * function: 
+ *  LBAToOffeset
+ * 
+ * description: 
+ *  Finds the starting address of a block of data given the sector number corresponding
+ * 	 to that data block
+ * 
+ * parameters:
+ *  unsigned long: the current sector number that points to a block of data
+ * 
+ * returns: 
+ *  uint: the value of the address for that block of data
+ */
+
+bool readImageMetadata()
+{
+	// since we'll be reading from the file, make one final check to ensure the pointer is not NULL
+	if( fp == NULL)
+	{
+		printf("There was an error. Please try again.\n");
+		if(DBG)
+		{
+			printf("ERROR -> readImageMetadata(): at start of function, the fp file pointer is NULL\n");
+		}
+		return false;
+	}
+
+	// make sure we're at byte zero of the image file
+	fseek( fp, 0, SEEK_SET) ;
 	
-	fseek(fp, 11, SEEK_SET);
-	
-	fread(&BPB_BytesPerSec, 1, 2, fp);
-	
-	printf("Value: %d\n", BPB_BytesPerSec);
+	// clear the file stream error indicator to prep for the fread() call
+	clearerr(fp);
+
+	// read all 90 bytes of the BPB into the struct
+	fread( &bpb, 1, 90, fp );
+
+	// check if fread() had an issue, return false if so
+	if( ferror(fp) )
+	{
+		if(DBG)
+		{
+			printf("ERROR -> readImageMetadata(): error from fread()\n");
+		}
+		return false;
+	}
+
+	// if we got here, then all is good
+	return true;
+}
+
+/*
+ * function: 
+ *  LBAToOffset
+ * 
+ * description: 
+ *  Finds the starting address of a block of data given the sector number corresponding
+ * 	 to that data block
+ * 
+ * parameters:
+ *  unsigned long: the current sector number that points to a block of data
+ * 
+ * returns: 
+ *  uint: the value of the address for that block of data
+ */
+uint LBAToOffset( unsigned long sector )
+{
+	return ( (sector - 2) * bpb.BPB_BytesPerSec ) + ( bpb.BPB_BytesPerSec * bpb.BPB_RsvdSecCnt ) + ( bpb.BPB_NumFATs * bpb.BPB_FATSz32 * bpb.BPB_BytesPerSec );
+}
+
+/*
+ * function: 
+ *  nextLB
+ * 
+ * description: 
+ *  Given a logical block address, look up into the first FAT and return the logical block address of 
+ *   the block in the file. If there are no further blocks, return -1.
+ * 
+ * parameters:
+ *  unsigned long sector: the block address which to calculate the next address for
+ * 
+ * returns: 
+ *  short: return the next logical block, or -1 if the end
+ */
+short nextLB( unsigned long sector )
+{
+	unsigned long FATAddress = ( bpb.BPB_BytesPerSec * bpb.BPB_RsvdSecCnt ) + ( sector*4 );
+	short val;
+	fseek( fp, FATAddress, SEEK_SET );
+	fread( &val, 2, 1, fp );
+	return val;
 }

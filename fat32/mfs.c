@@ -1,3 +1,4 @@
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
@@ -19,40 +20,37 @@ bool DBG = false;
 // mfs has commands that accept 3 arguments at most
 #define MAX_NUM_ARGUMENTS 3        
 
-// for visual friendliness, define a new BYTE type, which is really the same as char
-typedef unsigned char BYTE;
-
 // declare the BPB struct, and tell GCC it's packed so we can read the entire BPB structure
-//   in one fell swoop
+// in one fell swoop
 struct imageBPB
 {
-	BYTE BS_jmpBoot[3];				// offset byte 0, size 3 (bytes)
-	BYTE BS_OEMName[8]; 			// offset byte 3, size 8
-	unsigned short BPB_BytesPerSec;	// offset byte 11, size 2
-	BYTE BPB_SecPerClus;			// offset byte 13, size 1
-	unsigned short BPB_RsvdSecCnt;	// offset byte 14, size 2
-	BYTE BPB_NumFATs;				// offset byte 16, size 1
-	unsigned short BPB_RootEndCnt;	// offset byte 17, size 2
-	unsigned short BPB_TotSec16;	// offset byte 19, size 2
-	BYTE BPB_Media;					// offset byte 21, size 1
-	unsigned short BPB_FATSz16;		// offset byte 22, size 2
-	unsigned short BPB_SecPerTrk;	// offset byte 24, size 2
-	unsigned short BPB_NumHeads;	// offset byte 26, size 2
-	unsigned int BPB_HiddSec;		// offset byte 28, size 4
-	unsigned int BPB_TotSec32;		// offset byte 32, size 4
-	unsigned int BPB_FATSz32;		// offset byte 36, size 4
-	unsigned short BPB_ExtFlags;	// offset byte 40, size 2
-	BYTE BPB_FSVer[2];				// offset byte 42, size 2
-	unsigned int BPB_RootClus;		// offset byte 44, size 4
-	unsigned short BPB_FSInfo;		// offset byte 48, size 2
-	unsigned short BPB_BkBootSec;	// offset byte 50, size 2
-	BYTE BPB_Reserved[12];			// offset byte 52, size 12
-	BYTE BS_DrvNum;					// offset byte 64, size 1
-	BYTE BS_Reserved1;				// offset byte 65, size 1
-	BYTE BS_BootSig;				// offset byte 66, size 1
-	unsigned int BS_VolID;			// offset byte 67, size 4
+	uint8_t BS_jmpBoot[3];		// offset byte 0, size 3 (bytes)
+	char BS_OEMName[8]; 			// offset byte 3, size 8
+	uint16_t BPB_BytesPerSec;	// offset byte 11, size 2
+	uint8_t BPB_SecPerClus;		// offset byte 13, size 1
+	uint16_t BPB_RsvdSecCnt;	// offset byte 14, size 2
+	uint8_t BPB_NumFATs;			// offset byte 16, size 1
+	uint16_t BPB_RootEndCnt;	// offset byte 17, size 2
+	uint16_t BPB_TotSec16;		// offset byte 19, size 2
+	uint8_t BPB_Media;				// offset byte 21, size 1
+	uint16_t BPB_FATSz16;			// offset byte 22, size 2
+	uint16_t BPB_SecPerTrk;		// offset byte 24, size 2
+	uint16_t BPB_NumHeads;		// offset byte 26, size 2
+	uint32_t BPB_HiddSec;			// offset byte 28, size 4
+	uint32_t BPB_TotSec32;		// offset byte 32, size 4
+	uint32_t BPB_FATSz32;			// offset byte 36, size 4
+	uint16_t BPB_ExtFlags;		// offset byte 40, size 2
+	uint8_t BPB_FSVer[2];			// offset byte 42, size 2
+	uint32_t BPB_RootClus;		// offset byte 44, size 4
+	uint16_t BPB_FSInfo;			// offset byte 48, size 2
+	uint16_t BPB_BkBootSec;		// offset byte 50, size 2
+	uint8_t BPB_Reserved[12];	// offset byte 52, size 12
+	uint8_t BS_DrvNum;				// offset byte 64, size 1
+	uint8_t BS_Reserved1;			// offset byte 65, size 1
+	uint8_t BS_BootSig;				// offset byte 66, size 1
+	uint32_t BS_VolID;				// offset byte 67, size 4
 	char BS_VolLabel[11];			// offset byte 71, size 11
-	char BS_FileSysType[8];			// offset byte 82, size 8
+	char BS_FileSysType[8];		// offset byte 82, size 8
 } __attribute__((__packed__));
 
 // declare the global BPB struct
@@ -71,6 +69,7 @@ void printImageInfo( void );
 bool imgAlreadyOpened( void );
 void tryCloseImage( void );
 void printVolumeName( void );
+void cleanUp( void );
 
 int main( int argc, char *argv[] )
 {
@@ -159,10 +158,11 @@ int main( int argc, char *argv[] )
 		// store pointer to the first token (the command) for easy use
 		char *command = tokens[0];
 
-		// check for quit/exit commands and break out of main loop if received (req 5)
+		// check for quit/exit commands and break out of main loop if received
+		// before exiting, ensure any open image is closed via cleanUp()
 		if( strcmp(command, "quit") == 0 || strcmp(command, "exit") == 0) 
 		{
-			free( working_root );
+			cleanUp();
 			break;
 		}
 
@@ -467,4 +467,13 @@ short nextLB( unsigned long sector )
 	fseek( fp, FATAddress, SEEK_SET );
 	fread( &val, 2, 1, fp );
 	return val;
+}
+
+void cleanUp()
+{
+	if( imgAlreadyOpened() )
+	{
+		tryCloseImage();
+	}
+	return;
 }

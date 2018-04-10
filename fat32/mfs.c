@@ -59,15 +59,16 @@ struct imageBPB
 // declare the global BPB struct
 struct imageBPB bpb;
 
-// declare the global file pointer
-FILE * fp;
+// declare the global file pointer and ensure it's instantiated to the null ptr
+FILE * fp = NULL;
 
 // function declarations
 bool readImageMetadata( void );
 uint LBAToOffset( unsigned long );
 short nextLB( unsigned long );
 void printImageInfo( void );
-bool tryOpenImage ( char * );
+bool validateOpenCmd( char * );
+bool tryOpenImage( char * );
 
 int main( int argc, char *argv[] )
 {
@@ -168,15 +169,22 @@ int main( int argc, char *argv[] )
 
 		if( strcmp(command, "open") == 0)
 		{
-			// warn and bail if the user didn't specify anything to open
-			if( tokens[1] == NULL )
+			if( validateOpenCmd( tokens[1] ) )
 			{
-				printf("Please enter a filename to open. Ex: 'open fat32.img'.\n");
+				// if the simple checks pass, try to open the requested image
+				bool imgOpened = false;
+				imgOpened = tryOpenImage( tokens[1] );
+
+			  // if opening failed, ensure the file ptr is null so other commands behave appropriately
+				if( !imgOpened )
+				{
+					fp = NULL;
+				}
+			}
+			else
+			{
 				continue;
 			}
-
-			bool imgOpened = false;
-			imgOpened = tryOpenImage( tokens[1] );
 
 			continue;
 		}
@@ -309,22 +317,53 @@ bool readImageMetadata()
 	return true;
 }
 
+bool validateOpenCmd( char * requestedFilename )
+{
+	// check if an image is already opened, warn and bail if so
+	if( fp != NULL )
+	{
+		printf("Error: File system image already open.\n");
+		return false;
+	}
+
+	// warn and bail if the user didn't specify anything to open
+	if( requestedFilename == NULL )
+	{
+		printf("Please enter a filename to open. Ex: 'open fat32.img'.\n");
+		return false;
+	}
+
+	// basic checks pass, we're good
+	return true;
+}
+
 bool tryOpenImage ( char * imageToOpen )
 {
 	// reset errno for fopen call
 	errno = 0;
-	// attempt to open the file, bail if failed
+
+	// attempt to open the file
 	fp = fopen(imageToOpen, "r");
+
+	// if fp is still NULL, something went wrong
 	if( fp == NULL )
 	{
-		printf("There was an error opening the FAT32 image file. Please try again.\n");
-		if(DBG)
+		if( errno == 2 )
 		{
-			printf("ERROR -> main(): fopen failed with error: %u: %s\n", errno, strerror(errno));
+			printf("Error: File system image not found.\n");
+		}
+		else
+		{
+			printf("There was an error opening the '%s' FAT32 image file. Please try again.\n", imageToOpen);
+			if(DBG)
+			{
+				printf("ERROR -> main(): fopen failed with error: %u: %s\n", errno, strerror(errno));
+			}
 		}
 		return false;
 	}
 
+	// attempt to read the BPB and other metadata from the image
 	if( !readImageMetadata() )
 	{
 		printf("There was a problem reading the opened FAT32 image file. Please try again.\n");

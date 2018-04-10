@@ -386,7 +386,19 @@ void tryCloseImage()
 
 void printImageInfo()
 {
-	
+	// make the de facto check to ensure an image has been opened, warn and bail if not
+	if( !imgAlreadyOpened() ) 
+	{
+		printf("Error: File system image must be opened first.\n");
+		return;
+	}
+
+	// since printf stops at null characters, need to ensure the output has null terminators before calling printf
+	printf("BPB_BytesPerSec: %u ##\n", bpb.BPB_BytesPerSec);
+	printf("BPB_SecPerClus: %c ##\n", bpb.BPB_SecPerClus);
+	printf("BPB_RsvcSecCnt: %u ##\n", bpb.BPB_RsvdSecCnt);
+	printf("BPB_NumFATS: %c ##\n", bpb.BPB_NumFATs);
+	printf("BPB_FATSz32: %d ##\n", bpb.BPB_FATSz32);
 }
 
 bool imgAlreadyOpened()

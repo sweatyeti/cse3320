@@ -99,8 +99,7 @@ int main( int argc, char *argv[] )
 		 * maximum command that will be read is MAX_COMMAND_SIZE
 		 * This while command will wait here until the user
 		 * inputs something since fgets returns NULL when there
-		 * is no input
-		*/
+		 * is no input */
 		while( !fgets (cmd_str, MAX_COMMAND_SIZE, stdin) );
 		
 	
@@ -233,25 +232,6 @@ int main( int argc, char *argv[] )
 		}
 
 	}// main loop
-
-	if(DBG)
-	{
-		// output some BPB struct values to make sure we're getting the right stuff
-		printf("BPB_BytesPerSec: '%u'\n", bpb.BPB_BytesPerSec);
-		printf("BPB_TotSec32: '%d'\n", bpb. BPB_TotSec32);
-
-		char volLabel[12]; 
-		strncpy( volLabel, bpb.BS_VolLabel, 11 );
-		volLabel[11] = '\0';
-		printf("BPB_volLabel: '%s'\n", volLabel);
-
-		char fsType[9]; 
-		strncpy( fsType, bpb.BS_FileSysType, 8 );
-		fsType[8] = '\0';
-		printf("BPB_FileSysType: '%s'\n", fsType);
-
-		printf("BPB_SecPerTrk: '%u'\n", bpb.BPB_SecPerTrk);
-	}
 
 	exit(EXIT_SUCCESS);
 
@@ -393,12 +373,16 @@ void printImageInfo()
 		return;
 	}
 
-	// since printf stops at null characters, need to ensure the output has null terminators before calling printf
-	printf("BPB_BytesPerSec: %u ##\n", bpb.BPB_BytesPerSec);
-	printf("BPB_SecPerClus: %c ##\n", bpb.BPB_SecPerClus);
-	printf("BPB_RsvcSecCnt: %u ##\n", bpb.BPB_RsvdSecCnt);
-	printf("BPB_NumFATS: %c ##\n", bpb.BPB_NumFATs);
-	printf("BPB_FATSz32: %d ##\n", bpb.BPB_FATSz32);
+	// output all the required values in both base-10 (0n) and hexadecimal (0x)
+	/* fortunately, no checks for string terminators or sizes are needed, as
+	 * the printf specifiers and modifiers are able to pick exactly the bytes that are needed */
+	printf("BPB_BytesPerSec: 0n%hu, 0x%hX\n", bpb.BPB_BytesPerSec, bpb.BPB_BytesPerSec);
+	printf("BPB_SecPerClus: 0n%hhu, 0x%hhX\n", bpb.BPB_SecPerClus, bpb.BPB_SecPerClus);
+	printf("BPB_RsvcSecCnt: 0n%hu, 0x%hX\n", bpb.BPB_RsvdSecCnt, bpb.BPB_RsvdSecCnt);
+	printf("BPB_NumFATS: 0n%hhu, 0x%hhX\n", bpb.BPB_NumFATs, bpb.BPB_NumFATs);
+	printf("BPB_FATSz32: 0n%u, 0x%X\n", bpb.BPB_FATSz32, bpb.BPB_FATSz32);
+
+	return;
 }
 
 bool imgAlreadyOpened()

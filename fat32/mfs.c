@@ -66,9 +66,11 @@ FILE * fp = NULL;
 bool readImageMetadata( void );
 uint LBAToOffset( unsigned long );
 short nextLB( unsigned long );
-void printImageInfo( void );
 bool validateOpenCmd( char * );
-bool tryOpenImage( char * );
+void tryOpenImage( char * );
+void printImageInfo( void );
+bool imgAlreadyOpened( void );
+void tryCloseImage( void );
 
 int main( int argc, char *argv[] )
 {
@@ -172,14 +174,7 @@ int main( int argc, char *argv[] )
 			if( validateOpenCmd( tokens[1] ) )
 			{
 				// if the simple checks pass, try to open the requested image
-				bool imgOpened = false;
-				imgOpened = tryOpenImage( tokens[1] );
-
-			  // if opening failed, ensure the file ptr is null so other commands behave appropriately
-				if( !imgOpened )
-				{
-					fp = NULL;
-				}
+				tryOpenImage( tokens[1] );
 			}
 			else
 			{
@@ -197,7 +192,7 @@ int main( int argc, char *argv[] )
 
 		if( strcmp(command, "close") == 0)
 		{
-
+			tryCloseImage();
 			continue;
 		}
 
@@ -258,10 +253,6 @@ int main( int argc, char *argv[] )
 		printf("BPB_SecPerTrk: '%u'\n", bpb.BPB_SecPerTrk);
 	}
 
-
-	// close the file
-	fclose(fp);
-
 	exit(EXIT_SUCCESS);
 
 } // main
@@ -284,7 +275,7 @@ int main( int argc, char *argv[] )
 bool readImageMetadata()
 {
 	// since we'll be reading from the file, make one final check to ensure the pointer is not NULL
-	if( fp == NULL)
+	if( fp == NULL )
 	{
 		printf("There was an error. Please try again.\n");
 		if(DBG)
@@ -320,7 +311,7 @@ bool readImageMetadata()
 bool validateOpenCmd( char * requestedFilename )
 {
 	// check if an image is already opened, warn and bail if so
-	if( fp != NULL )
+	if( imgAlreadyOpened() )
 	{
 		printf("Error: File system image already open.\n");
 		return false;
@@ -329,7 +320,7 @@ bool validateOpenCmd( char * requestedFilename )
 	// warn and bail if the user didn't specify anything to open
 	if( requestedFilename == NULL )
 	{
-		printf("Please enter a filename to open. Ex: 'open fat32.img'.\n");
+		printf("Error: Please enter a filename to open. Ex: 'open fat32.img'.\n");
 		return false;
 	}
 
@@ -337,7 +328,7 @@ bool validateOpenCmd( char * requestedFilename )
 	return true;
 }
 
-bool tryOpenImage ( char * imageToOpen )
+void tryOpenImage ( char * imageToOpen )
 {
 	// reset errno for fopen call
 	errno = 0;
@@ -360,7 +351,7 @@ bool tryOpenImage ( char * imageToOpen )
 				printf("ERROR -> main(): fopen failed with error: %u: %s\n", errno, strerror(errno));
 			}
 		}
-		return false;
+		return;
 	}
 
 	// attempt to read the BPB and other metadata from the image
@@ -368,15 +359,44 @@ bool tryOpenImage ( char * imageToOpen )
 	{
 		printf("There was a problem reading the opened FAT32 image file. Please try again.\n");
 		fclose(fp);
-		return false;
+		fp = NULL;
+		return;
 	}
 
-	return true;
+	return;
+}
+
+void tryCloseImage()
+{
+	// check if an image has been opened, warn and bail if so
+	if( !imgAlreadyOpened() )
+	{
+		printf("Error: File system not open.\n");
+		return;
+	}
+	// close the file
+	if( fclose(fp) != 0 && DBG)
+	{
+		printf("ERROR-> tryCloseImage(): error during fclose..\n");
+	}
+	
+	// ensure the file ptr gets reset to NULL
+	fp = NULL;
 }
 
 void printImageInfo()
 {
+	
+}
 
+bool imgAlreadyOpened()
+{
+	if( fp == NULL )
+	{
+		return false;
+	}
+	
+	return true;
 }
 
 /*

@@ -8,10 +8,9 @@
 // enable/disable debug output
 bool DBG = false;
 
-/* We want to split our command line up into tokens
- * so we need to define what delimits our tokens.
- * In this case  white space will separate the tokens on our command line
-*/
+// We want to split our command line up into tokens
+// so we need to define what delimits our tokens.
+// In this case  white space will separate the tokens on our command line
 #define WHITESPACE " \t\n"
 
 // The maximum command-line size
@@ -23,8 +22,8 @@ bool DBG = false;
 // for visual friendliness, define a new BYTE type, which is really the same as char
 typedef unsigned char BYTE;
 
-/* declare the BPB struct, and tell GCC it's packed so we can read the entire BPB structure
-   in one fell swoop */
+// declare the BPB struct, and tell GCC it's packed so we can read the entire BPB structure
+//   in one fell swoop
 struct imageBPB
 {
 	BYTE BS_jmpBoot[3];				// offset byte 0, size 3 (bytes)
@@ -71,6 +70,7 @@ void tryOpenImage( char * );
 void printImageInfo( void );
 bool imgAlreadyOpened( void );
 void tryCloseImage( void );
+void printVolumeName( void );
 
 int main( int argc, char *argv[] )
 {
@@ -95,11 +95,11 @@ int main( int argc, char *argv[] )
 		// Print out the mfs prompt
 		printf ("mfs> ");
 
-		/* Read the command from the commandline.  The
-		 * maximum command that will be read is MAX_COMMAND_SIZE
-		 * This while command will wait here until the user
-		 * inputs something since fgets returns NULL when there
-		 * is no input */
+		// Read the command from the commandline.  The
+		// maximum command that will be read is MAX_COMMAND_SIZE
+		// This while command will wait here until the user
+		// inputs something since fgets returns NULL when there
+		// is no input */
 		while( !fgets (cmd_str, MAX_COMMAND_SIZE, stdin) );
 		
 	
@@ -227,7 +227,7 @@ int main( int argc, char *argv[] )
 
 		if( strcmp(command, "volume") == 0)
 		{
-
+			printVolumeName();
 			continue;
 		}
 
@@ -374,8 +374,8 @@ void printImageInfo()
 	}
 
 	// output all the required values in both base-10 (0n) and hexadecimal (0x)
-	/* fortunately, no checks for string terminators or sizes are needed, as
-	 * the printf specifiers and modifiers are able to pick exactly the bytes that are needed */
+	// fortunately, no checks for string terminators or sizes are needed with these fields, as
+	// the printf specifiers and modifiers are able to pick exactly the bytes that are needed
 	printf("BPB_BytesPerSec: 0n%hu, 0x%hX\n", bpb.BPB_BytesPerSec, bpb.BPB_BytesPerSec);
 	printf("BPB_SecPerClus: 0n%hhu, 0x%hhX\n", bpb.BPB_SecPerClus, bpb.BPB_SecPerClus);
 	printf("BPB_RsvcSecCnt: 0n%hu, 0x%hX\n", bpb.BPB_RsvdSecCnt, bpb.BPB_RsvdSecCnt);
@@ -393,6 +393,38 @@ bool imgAlreadyOpened()
 	}
 	
 	return true;
+}
+
+void printVolumeName()
+{
+	// make the de facto check to ensure an image has been opened, warn and bail if not
+	if( !imgAlreadyOpened() ) 
+	{
+		printf("Error: File system image must be opened first.\n");
+		return;
+	}
+
+	// per the spec, the FAT32 volume label is 11 bytes wide, so create a block
+	// of memory 11+1 to include the null terminator
+	char volLabel[12]; 
+
+	// copy the string of 11 chars from the structure
+	strncpy( volLabel, bpb.BS_VolLabel, 11 );
+
+	// add the null terminator so printf is happy
+	volLabel[11] = '\0';
+
+	// per the spec, the string "NO NAME    " is present in the BS_VolLab field when there is no 
+	// label, so output the appropriate string
+	if( strcmp(volLabel, "NO NAME    ") == 0 )
+	{
+		printf("Error: volume name not found.\n");
+	}
+	else
+	{
+		printf("Volume name: '%s'\n", volLabel);
+	}
+
 }
 
 /*

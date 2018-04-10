@@ -3,9 +3,22 @@
 #include <stdbool.h>
 #include <string.h>
 #include <errno.h>
+#include <unistd.h>
 
 // enable/disable debug output
-bool DBG = true;
+bool DBG = false;
+
+/* We want to split our command line up into tokens
+ * so we need to define what delimits our tokens.
+ * In this case  white space will separate the tokens on our command line
+*/
+#define WHITESPACE " \t\n"
+
+// The maximum command-line size
+#define MAX_COMMAND_SIZE 255
+
+// mfs has commands that accept 3 arguments at most
+#define MAX_NUM_ARGUMENTS 3        
 
 // for visual friendliness, define a new BYTE type, which is really the same as char
 typedef unsigned char BYTE;
@@ -53,51 +66,198 @@ FILE * fp;
 bool readImageMetadata( void );
 uint LBAToOffset( unsigned long );
 short nextLB( unsigned long );
+void printImageInfo( void );
+bool tryOpenImage ( char * );
 
-int main()
+int main( int argc, char *argv[] )
 {
-	// reset errno for fopen call
-	errno = 0;
-	// attempt to open the file, bail if failed
-	fp = fopen("fat32.img", "r");
-	if( fp == NULL )
-	{
-		printf("There was an error opening the FAT32 image file. Please try again.\n");
+	// check for any configured cmdline options
+	char c;
+  while((c = getopt(argc,argv,"d"))!=-1) {
+    switch(c) {
+      case 'd':
+        DBG = true;
+        break;
+			default:
+				break;
+    }
+  }
+
+	// allocate memory to hold the string entered by the user in the mfs shell
+	char * cmd_str = (char*) malloc( MAX_COMMAND_SIZE );
+
+	// start the main loop
+  while( true )
+  {
+		// Print out the mfs prompt
+		printf ("mfs> ");
+
+		/* Read the command from the commandline.  The
+		 * maximum command that will be read is MAX_COMMAND_SIZE
+		 * This while command will wait here until the user
+		 * inputs something since fgets returns NULL when there
+		 * is no input
+		*/
+		while( !fgets (cmd_str, MAX_COMMAND_SIZE, stdin) );
+		
+	
+		// save the raw command, removing any \r or \n chars from the end, for later use
+		char * rawCmd = strdup( cmd_str );
+		rawCmd[strcspn(rawCmd, "\r\n")] = 0;
+
+		// Parse input - use MAX...+1 because we need to accept 3 params PLUS the command
+		char * tokens[MAX_NUM_ARGUMENTS+1];
+
+		int token_count = 0;                                 
+		
+		// Pointer to point to the token
+		// parsed by strsep
+		char * arg_ptr;                                         
+																														
+		char * working_str  = strdup( cmd_str );
+		
 		if(DBG)
 		{
-			printf("ERROR -> main(): fopen failed with error: %u: %s\n", errno, strerror(errno));
+			printf("DEBUG: raw command entered: %s\n", rawCmd);
+		}                
+
+		// we are going to move the working_str pointer so
+		// keep track of its original value so we can deallocate
+		// the correct amount at the end
+		char * working_root = working_str;
+
+		// Tokenize the input strings with whitespace used as the delimiter
+		while ( ( (arg_ptr = strsep(&working_str, WHITESPACE ) ) != NULL) && 
+							(token_count<=MAX_NUM_ARGUMENTS))
+		{
+			tokens[token_count] = strndup( arg_ptr, MAX_COMMAND_SIZE );
+			if( strlen( tokens[token_count] ) == 0 )
+			{
+				tokens[token_count] = NULL;
+			}
+				token_count++;
 		}
-		exit(EXIT_FAILURE);
-	}
+		
+		if(DBG)
+		{
+			int token_index  = 0;
+			for( token_index = 0; token_index < token_count; token_index ++ ) 
+			{
+				printf("DEBUG: ");
+				printf("token[%d] = %s\n", token_index, tokens[token_index] );  
+			}
+		}
 
-	if( !readImageMetadata() )
+		// if no command/text was submitted, restart the loop
+		if(tokens[0] == NULL)
+		{
+			continue;
+		}
+		
+		// store pointer to the first token (the command) for easy use
+		char *command = tokens[0];
+
+		// check for quit/exit commands and break out of main loop if received (req 5)
+		if( strcmp(command, "quit") == 0 || strcmp(command, "exit") == 0) 
+		{
+			free( working_root );
+			break;
+		}
+
+		// check the entered mfs command against known commands, and call the appropriate function
+
+		if( strcmp(command, "open") == 0)
+		{
+			// warn and bail if the user didn't specify anything to open
+			if( tokens[1] == NULL )
+			{
+				printf("Please enter a filename to open. Ex: 'open fat32.img'.\n");
+				continue;
+			}
+
+			bool imgOpened = false;
+			imgOpened = tryOpenImage( tokens[1] );
+
+			continue;
+		}
+
+		if( strcmp(command, "info") == 0)
+		{
+			printImageInfo();
+			continue;
+		}
+
+		if( strcmp(command, "close") == 0)
+		{
+
+			continue;
+		}
+
+		if( strcmp(command, "stat") == 0)
+		{
+
+			continue;
+		}
+
+		if( strcmp(command, "get") == 0)
+		{
+
+			continue;
+		}
+
+		if( strcmp(command, "cd") == 0)
+		{
+
+			continue;
+		}
+
+		if( strcmp(command, "ls") == 0)
+		{
+
+			continue;
+		}
+
+		if( strcmp(command, "read") == 0)
+		{
+
+			continue;
+		}
+
+		if( strcmp(command, "volume") == 0)
+		{
+
+			continue;
+		}
+
+	}// main loop
+
+	if(DBG)
 	{
-		printf("There was a problem reading the opened FAT32 image file. Please try again.\n");
-		fclose(fp);
-		exit(EXIT_FAILURE);
+		// output some BPB struct values to make sure we're getting the right stuff
+		printf("BPB_BytesPerSec: '%u'\n", bpb.BPB_BytesPerSec);
+		printf("BPB_TotSec32: '%d'\n", bpb. BPB_TotSec32);
+
+		char volLabel[12]; 
+		strncpy( volLabel, bpb.BS_VolLabel, 11 );
+		volLabel[11] = '\0';
+		printf("BPB_volLabel: '%s'\n", volLabel);
+
+		char fsType[9]; 
+		strncpy( fsType, bpb.BS_FileSysType, 8 );
+		fsType[8] = '\0';
+		printf("BPB_FileSysType: '%s'\n", fsType);
+
+		printf("BPB_SecPerTrk: '%u'\n", bpb.BPB_SecPerTrk);
 	}
-
-	printf("BPB_BytesPerSec: '%u'\n", bpb.BPB_BytesPerSec);
-	printf("BPB_TotSec32: '%d'\n", bpb. BPB_TotSec32);
-
-	char volLabel[12]; 
-	strncpy( volLabel, bpb.BS_VolLabel, 11 );
-	volLabel[12] = '\0';
-	printf("BPB_volLabel: '%s'\n", volLabel);
-
-	char fsType[9]; 
-	strncpy( fsType, bpb.BS_FileSysType, 8 );
-	fsType[8] = '\0';
-	printf("BPB_FileSysType: '%s'\n", fsType);
-
-	printf("BPB_SecPerTrk: '%u'\n", bpb.BPB_SecPerTrk);
 
 
 	// close the file
 	fclose(fp);
 
 	exit(EXIT_SUCCESS);
-}
+
+} // main
+
 /*
  * function: 
  *  LBAToOffeset
@@ -147,6 +307,37 @@ bool readImageMetadata()
 
 	// if we got here, then all is good
 	return true;
+}
+
+bool tryOpenImage ( char * imageToOpen )
+{
+	// reset errno for fopen call
+	errno = 0;
+	// attempt to open the file, bail if failed
+	fp = fopen(imageToOpen, "r");
+	if( fp == NULL )
+	{
+		printf("There was an error opening the FAT32 image file. Please try again.\n");
+		if(DBG)
+		{
+			printf("ERROR -> main(): fopen failed with error: %u: %s\n", errno, strerror(errno));
+		}
+		return false;
+	}
+
+	if( !readImageMetadata() )
+	{
+		printf("There was a problem reading the opened FAT32 image file. Please try again.\n");
+		fclose(fp);
+		return false;
+	}
+
+	return true;
+}
+
+void printImageInfo()
+{
+
 }
 
 /*

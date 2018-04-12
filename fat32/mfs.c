@@ -53,8 +53,23 @@ struct imageBPB
 	char BS_FileSysType[8];		// offset byte 82, size 8
 } __attribute__((__packed__));
 
+// declare the directory struct and ensure it's also packed
+struct DirectoryEntry
+{
+	char DIR_name[11];
+	uint8_t DIR_attr;
+	uint8_t unused1[8];
+	uint16_t DIR_firstClusterHigh;
+	uint8_t unused[4];
+	uint16_t DIR_firstClusterLow;
+	uint32_t DIR_fileSize;
+} __attribute__((__packed__));
+
 // declare the global BPB struct
 struct imageBPB bpb;
+
+// the prompt will display the current folder location, so have a global for it
+char * currentDir = NULL;
 
 // declare the global file pointer and ensure it's instantiated to the null ptr
 FILE * fp = NULL;
@@ -70,6 +85,8 @@ bool imgAlreadyOpened( void );
 void tryCloseImage( void );
 void printVolumeName( void );
 void cleanUp( void );
+char * getCurrentDir( void );
+void setCurrentDir( char * );
 
 int main( int argc, char *argv[] )
 {
@@ -91,8 +108,21 @@ int main( int argc, char *argv[] )
 	// start the main loop
   while( true )
   {
-		// Print out the mfs prompt
-		printf ("mfs> ");
+		// Print out the mfs prompt depending on the context
+		if( currentDir == NULL )
+		{
+			printf ("mfs> ");
+		}
+		else if( currentDir == "root" )
+		{
+			printf("mfs:\\> ");
+		}
+		else
+		{
+			// char * newCwd = (char*) malloc( strlen(cwd) + strlen(cmdParam) + 2 );
+			//char * dirToPrint = (char*) malloc( strlen(currentDir) + )
+			printf("mfs:%s>", currentDir);
+		}
 
 		// Read the command from the commandline.  The
 		// maximum command that will be read is MAX_COMMAND_SIZE
@@ -343,6 +373,9 @@ void tryOpenImage ( char * imageToOpen )
 		return;
 	}
 
+	// since the image was just opened, set the currentDir global to the root dir
+	currentDir = "root";
+
 	return;
 }
 
@@ -362,6 +395,9 @@ void tryCloseImage()
 	
 	// ensure the file ptr gets reset to NULL
 	fp = NULL;
+
+	// ensure the currentDir global gets reset to NULL
+	currentDir = NULL;
 }
 
 void printImageInfo()
@@ -381,6 +417,13 @@ void printImageInfo()
 	printf("BPB_RsvcSecCnt: 0n%hu, 0x%hX\n", bpb.BPB_RsvdSecCnt, bpb.BPB_RsvdSecCnt);
 	printf("BPB_NumFATS: 0n%hhu, 0x%hhX\n", bpb.BPB_NumFATs, bpb.BPB_NumFATs);
 	printf("BPB_FATSz32: 0n%u, 0x%X\n", bpb.BPB_FATSz32, bpb.BPB_FATSz32);
+
+	if(DBG)
+	{
+		printf("DEBUG: BPB_RootClus: 0n%u, 0x%X\n", bpb.BPB_RootClus, bpb.BPB_RootClus);
+		uint32_t rootAddr = LBAToOffset(2);
+		printf("DEBUG: root dir address = 0x%X\n", rootAddr);
+	}
 
 	return;
 }

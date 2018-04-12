@@ -65,6 +65,9 @@ struct DirectoryEntry
 	uint32_t DIR_fileSize;
 } __attribute__((__packed__));
 
+// declare the global directory array
+struct DirectoryEntry dir[16];
+
 // declare the global BPB struct
 struct imageBPB bpb;
 
@@ -171,11 +174,10 @@ int main( int argc, char *argv[] )
 		
 		if(DBG)
 		{
-			int token_index  = 0;
+			int token_index = 0;
 			for( token_index = 0; token_index < token_count; token_index ++ ) 
 			{
-				printf("DEBUG: ");
-				printf("token[%d] = %s\n", token_index, tokens[token_index] );  
+				printf("DEBUG: token[%d] = %s\n", token_index, tokens[token_index]);
 			}
 		}
 
@@ -262,6 +264,8 @@ int main( int argc, char *argv[] )
 		}
 
 	}// main loop
+
+	free(working_root);
 
 	exit(EXIT_SUCCESS);
 
@@ -470,6 +474,15 @@ void printVolumeName()
 
 }
 
+void cleanUp()
+{
+	if( imgAlreadyOpened() )
+	{
+		tryCloseImage();
+	}
+	return;
+}
+
 /*
  * function: 
  *  LBAToOffset
@@ -510,13 +523,4 @@ short nextLB( unsigned long sector )
 	fseek( fp, FATAddress, SEEK_SET );
 	fread( &val, 2, 1, fp );
 	return val;
-}
-
-void cleanUp()
-{
-	if( imgAlreadyOpened() )
-	{
-		tryCloseImage();
-	}
-	return;
 }

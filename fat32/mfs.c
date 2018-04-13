@@ -18,7 +18,10 @@ bool DBG = false;
 #define MAX_COMMAND_SIZE 255
 
 // mfs has commands that accept 3 arguments at most
-#define MAX_NUM_ARGUMENTS 3        
+#define MAX_NUM_ARGUMENTS 3     
+
+// the image being consumed has 16 directory entries in root, define that here
+#define ROOT_DIR_ENTRIES 16   
 
 // declare the BPB struct, and tell GCC it's packed so we can read the entire BPB structure
 // in one fell swoop
@@ -74,13 +77,16 @@ struct imageBPB bpb;
 // the prompt will display the current folder location, so have a global for it
 char * currentDir = NULL;
 
+// global to keep track of the current working directory via sector num
+uint64_t currentSector = 0;
+
 // declare the global file pointer and ensure it's instantiated to the null ptr
 FILE * fp = NULL;
 
 // function declarations
 bool readImageMetadata( void );
-uint LBAToOffset( unsigned long );
-short nextLB( unsigned long );
+int32_t LBAToOffset( uint64_t );
+int16_t nextLB( uint64_t );
 bool validateOpenCmd( char * );
 void tryOpenImage( char * );
 void printImageInfo( void );
@@ -90,6 +96,7 @@ void printVolumeName( void );
 void cleanUp( void );
 char * getCurrentDir( void );
 void setCurrentDir( char * );
+void handleLS( void );
 
 int main( int argc, char *argv[] )
 {
@@ -122,8 +129,6 @@ int main( int argc, char *argv[] )
 		}
 		else
 		{
-			// char * newCwd = (char*) malloc( strlen(cwd) + strlen(cmdParam) + 2 );
-			//char * dirToPrint = (char*) malloc( strlen(currentDir) + )
 			printf("mfs:%s>", currentDir);
 		}
 
@@ -152,7 +157,7 @@ int main( int argc, char *argv[] )
 		
 		if(DBG)
 		{
-			printf("DEBUG: raw command entered: %s\n", rawCmd);
+			printf("DEBUG: main(): raw command entered: %s\n", rawCmd);
 		}                
 
 		// we are going to move the working_str pointer so
@@ -177,7 +182,7 @@ int main( int argc, char *argv[] )
 			int token_index = 0;
 			for( token_index = 0; token_index < token_count; token_index ++ ) 
 			{
-				printf("DEBUG: token[%d] = %s\n", token_index, tokens[token_index]);
+				printf("DEBUG: main(): token[%d] = %s\n", token_index, tokens[token_index]);
 			}
 		}
 
@@ -191,14 +196,15 @@ int main( int argc, char *argv[] )
 		char *command = tokens[0];
 
 		// check for quit/exit commands and break out of main loop if received
-		// before exiting, ensure any open image is closed via cleanUp()
 		if( strcmp(command, "quit") == 0 || strcmp(command, "exit") == 0) 
 		{
+			// before exiting, ensure any open image is closed via cleanUp()
 			cleanUp();
 			break;
 		}
 
 		// check the entered mfs command against known commands, and call the appropriate function
+		// change this to switch/case?
 
 		if( strcmp(command, "open") == 0)
 		{
@@ -247,7 +253,7 @@ int main( int argc, char *argv[] )
 
 		if( strcmp(command, "ls") == 0)
 		{
-
+			handleLS();
 			continue;
 		}
 
@@ -262,10 +268,9 @@ int main( int argc, char *argv[] )
 			printVolumeName();
 			continue;
 		}
-
 	}// main loop
 
-	free(working_root);
+	
 
 	exit(EXIT_SUCCESS);
 
@@ -377,8 +382,9 @@ void tryOpenImage ( char * imageToOpen )
 		return;
 	}
 
-	// since the image was just opened, set the currentDir global to the root dir
+	// since the image was just opened, set the currentDir global to the root dir, along with the root sec #
 	currentDir = "root";
+	currentSector = bpb.BPB_RootClus;
 
 	return;
 }
@@ -391,6 +397,12 @@ void tryCloseImage()
 		printf("Error: File system not open.\n");
 		return;
 	}
+
+	if(DBG)
+	{
+		printf("DEBUG: tryCloseImage(): closing the image...\n");
+	}
+
 	// close the file
 	if( fclose(fp) != 0 && DBG)
 	{
@@ -424,9 +436,9 @@ void printImageInfo()
 
 	if(DBG)
 	{
-		printf("DEBUG: BPB_RootClus: 0n%u, 0x%X\n", bpb.BPB_RootClus, bpb.BPB_RootClus);
-		uint32_t rootAddr = LBAToOffset(2);
-		printf("DEBUG: root dir address = 0x%X\n", rootAddr);
+		printf("DEBUG: printImageInfo(): BPB_RootClus: 0n%u, 0x%X\n", bpb.BPB_RootClus, bpb.BPB_RootClus);
+		uint32_t rootAddr = LBAToOffset(bpb.BPB_RootClus);
+		printf("DEBUG: printImageInfo(): root dir address = 0x%X\n", rootAddr);
 	}
 
 	return;
@@ -452,7 +464,7 @@ void printVolumeName()
 	}
 
 	// per the spec, the FAT32 volume label is 11 bytes wide, so create a block
-	// of memory 11+1 to include the null terminator
+	// of memory of 11+1 bytes to include the null terminator
 	char volLabel[12]; 
 
 	// copy the string of 11 chars from the structure
@@ -474,6 +486,75 @@ void printVolumeName()
 
 }
 
+void handleLS()
+{
+	// make the de facto check to ensure an image has been opened, warn and bail if not
+	if( !imgAlreadyOpened() ) 
+	{
+		printf("Error: File system image must be opened first.\n");
+		return;
+	}
+
+	if(DBG)
+	{
+		printf("DEBUG: handleLS(): current sector: %lu\n", currentSector);
+		printf("DEBUG: handleLS(): sector starting addr: 0x%X\n", LBAToOffset(currentSector));
+	}
+
+	// clear the file error indicator
+	clearerr(fp);
+
+	// navigate to teh appropriate image location offset, and check if successful
+	if( fseek(fp, LBAToOffset(currentSector), SEEK_SET) != 0 )
+	{
+		printf("There was a problem performing this operation. Please try again.\n");
+		if(DBG)
+		{
+			if( ferror(fp) )
+			{
+				printf("ERROR -> handleLS(): fseek() failed at above address.. ");
+			}
+			else if ( feof(fp) )
+			{
+				printf("ERROR -> handleLS(): fseek() reached EOF from above address.. ");
+			}
+		}
+	}
+
+	// clear the file error indicator
+	clearerr(fp);
+
+	// check if we're reading the root dir, and read in the 16 directory entries if so
+	if( currentSector == bpb.BPB_RootClus )
+	{
+		fread( &dir, 32, ROOT_DIR_ENTRIES, fp );
+	}	
+	else
+	{
+		// do stuff
+	}
+
+	if( ferror(fp) )
+	{
+		printf("There was a problem reading the image. Please try again.\n");
+		return;
+	}
+
+	if(DBG)
+	{
+		int i;
+		for( i=0; i<ROOT_DIR_ENTRIES; i++ )
+		{
+			char rawLabel[12];
+			strncpy( rawLabel, dir[i].DIR_name, 11 );
+			rawLabel[11] = '\0';
+			printf("DEBUG: handleLS(): raw directory entry label: %s\n", rawLabel);
+		}
+	}
+
+	return;
+}
+
 void cleanUp()
 {
 	if( imgAlreadyOpened() )
@@ -492,12 +573,12 @@ void cleanUp()
  * 	 to that data block
  * 
  * parameters:
- *  unsigned long: the current sector number that points to a block of data
+ *  uint64_t: the current sector number that points to a block of data
  * 
  * returns: 
- *  uint: the value of the address for that block of data
+ *  int32_t: the value of the address for that block of data
  */
-uint LBAToOffset( unsigned long sector )
+int32_t LBAToOffset( uint64_t sector )
 {
 	return ( (sector - 2) * bpb.BPB_BytesPerSec ) + ( bpb.BPB_BytesPerSec * bpb.BPB_RsvdSecCnt ) + ( bpb.BPB_NumFATs * bpb.BPB_FATSz32 * bpb.BPB_BytesPerSec );
 }
@@ -511,15 +592,15 @@ uint LBAToOffset( unsigned long sector )
  *   the block in the file. If there are no further blocks, return -1.
  * 
  * parameters:
- *  unsigned long sector: the block address which to calculate the next address for
+ *  uint64_t sector: the block address which to calculate the next address for
  * 
  * returns: 
- *  short: return the next logical block, or -1 if the end
+ *  int16_t: return the next logical block, or -1 if the end
  */
-short nextLB( unsigned long sector )
+int16_t nextLB( uint64_t sector )
 {
-	unsigned long FATAddress = ( bpb.BPB_BytesPerSec * bpb.BPB_RsvdSecCnt ) + ( sector*4 );
-	short val;
+	uint64_t FATAddress = ( bpb.BPB_BytesPerSec * bpb.BPB_RsvdSecCnt ) + ( sector*4 );
+	int16_t val;
 	fseek( fp, FATAddress, SEEK_SET );
 	fread( &val, 2, 1, fp );
 	return val;

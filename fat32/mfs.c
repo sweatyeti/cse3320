@@ -21,7 +21,7 @@ bool DBG = false;
 #define MAX_NUM_ARGUMENTS 3     
 
 // the image being consumed has 16 directory entries in root, define that here
-#define ROOT_DIR_ENTRIES 16   
+#define NUM_ROOT_DIR_ENTRIES 16   
 
 // declare the BPB struct, and tell GCC it's packed so we can read the entire BPB structure
 // in one fell swoop
@@ -519,6 +519,7 @@ void handleLS()
 				printf("ERROR -> handleLS(): fseek() reached EOF from above address.. ");
 			}
 		}
+		return;
 	}
 
 	// clear the file error indicator
@@ -527,11 +528,11 @@ void handleLS()
 	// check if we're reading the root dir, and read in the 16 directory entries if so
 	if( currentSector == bpb.BPB_RootClus )
 	{
-		fread( &dir, 32, ROOT_DIR_ENTRIES, fp );
+		fread( &dir, 32, NUM_ROOT_DIR_ENTRIES, fp );
 	}	
 	else
 	{
-		// do stuff
+		// do non-root stuff
 	}
 
 	if( ferror(fp) )
@@ -540,17 +541,24 @@ void handleLS()
 		return;
 	}
 
+	// 
+	int i;
+	for( i=0; i<NUM_ROOT_DIR_ENTRIES; i++ )
+	{
+		char rawLabel[12];
+		strncpy( rawLabel, dir[i].DIR_name, 11 );
+		rawLabel[11] = '\0';
+
+		//if(rawLabel[0] == '\x00' || rawLabel[0] == '\xe5' || rawLabel[0] == '\x')
+
 	if(DBG)
 	{
-		int i;
-		for( i=0; i<ROOT_DIR_ENTRIES; i++ )
-		{
-			char rawLabel[12];
-			strncpy( rawLabel, dir[i].DIR_name, 11 );
-			rawLabel[11] = '\0';
 			printf("DEBUG: handleLS(): raw directory entry label: %s\n", rawLabel);
+			printf("DEBUG: handleLS(): first label char raw byte: 0x%X\n", rawLabel[0]);
 		}
 	}
+
+
 
 	return;
 }

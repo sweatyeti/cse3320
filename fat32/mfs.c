@@ -18,10 +18,7 @@ bool DBG = false;
 #define MAX_COMMAND_SIZE 255
 
 // mfs has commands that accept 3 arguments at most
-#define MAX_NUM_ARGUMENTS 3     
-
-// the image being consumed has 16 directory entries in root, define that here
-#define NUM_ROOT_DIR_ENTRIES 16   
+#define MAX_NUM_ARGUMENTS 3 
 
 // directory entries are 32 bytes wide
 #define DIR_ENTRY_SIZE 32
@@ -163,12 +160,7 @@ int main( int argc, char *argv[] )
 		// parsed by strsep
 		char * arg_ptr;                                         
 																														
-		char * working_str  = strdup( cmd_str );
-		
-		if(DBG)
-		{
-			printf("DEBUG: main(): raw command entered: %s\n", rawCmd);
-		}                
+		char * working_str  = strdup( cmd_str );            
 
 		// we are going to move the working_str pointer so
 		// keep track of its original value so we can deallocate
@@ -214,7 +206,7 @@ int main( int argc, char *argv[] )
 		}
 
 		// check the entered mfs command against known commands, and call the appropriate function
-		// change this to switch/case?
+		// change this to switch/case? would break for the switch interfere with the loop?
 
 		if( strcmp(command, "open") == 0)
 		{
@@ -447,7 +439,7 @@ void tryCloseImage()
 
 	if(DBG)
 	{
-		printf("DEBUG: tryCloseImage(): image closed...\n");
+		printf("DEBUG: tryCloseImage(): image closed\n");
 	}
 	
 	return;
@@ -584,8 +576,9 @@ bool readCurrDirEntries(uint16_t * outNumEntries)
 			char rawLabel[12];
 			strncpy( rawLabel, dir[numDirEntriesRead].DIR_name, 11 );
 			rawLabel[11] = '\0';
-			printf("    -: raw directory entry label: %s\n", rawLabel);
-			printf("    -: first label char raw byte: 0x%X\n", rawLabel[0]);
+			printf("    -: raw label: %s, ", rawLabel);
+			printf("1st label byte: 0x%hhX, ", rawLabel[0]);
+			printf("attr: 0x%hhX\n", dir[numDirEntriesRead].DIR_attr);
 			printf("    -: directory entry index %hhu read..\n", numDirEntriesRead);
 		}
 
@@ -723,6 +716,7 @@ void handleLS()
 		return;
 	}
 
+	// initialize a 2-byte number to hold the # of entries, supplied by readCurrDirEntries()
 	uint16_t numDirEntries = 0;
 	if( !readCurrDirEntries(&numDirEntries) && DBG )
 	{
@@ -730,7 +724,28 @@ void handleLS()
 		return;
 	}
 
-	
+	// loop through each directory entry and display the necessary info
+	uint16_t i;
+	for( i=0; i<numDirEntries; i++)
+	{
+		uint8_t firstCharOfName = dir[i].DIR_name[0];
+		uint8_t attr = dir[i].DIR_attr;
+
+		// per the assignment, the only entries to show by attribute are:
+		// 0x01: read-only file
+		// 0x10: subdirectory
+		// 0x20: archive flag
+		// so create a bitmask of those values to compare against
+		uint8_t attrBitmask = 0x01 | 0x10 | 0x20;
+
+		// do the attribute bitwise comparison
+		// if any of the desired bits match, then the value will be >1
+		if( (attr | attrBitmask) > 1 )
+		{
+			printf("    -: entry %hu attr matches\n", i);
+		}
+		
+	}
 
 	uint16_t test = 0x17d3; // FOLDERA address
 	printf("FOLDERA offset: %X\n", LBAToOffset(test));

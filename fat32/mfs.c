@@ -99,6 +99,8 @@ char * getCurrentDir( void );
 void setCurrentDir( char * );
 void handleLS( void );
 bool readCurrDirEntries( uint16_t * );
+void handleStat( char * );
+char * generateShortName( char * );
 
 int main( int argc, char *argv[] )
 {
@@ -238,7 +240,7 @@ int main( int argc, char *argv[] )
 
 		if( strcmp(command, "stat") == 0)
 		{
-
+			handleStat(tokens[1]);
 			continue;
 		}
 
@@ -839,6 +841,109 @@ void handleLS()
 	}
 	return;
 } // handleLS()
+
+void handleStat( char * enteredEntryName )
+{
+	if(DBG)
+	{
+		printf("DEBUG: handleStat() starting...\n");
+	}
+	// make the de facto check to ensure an image has been opened, warn and bail if not
+	if( !imgAlreadyOpened() ) 
+	{
+		printf("Error: File system image must be opened first.\n");
+		return;
+	}
+
+	// ensure the user entered an entry name
+	if( enteredEntryName == NULL )
+	{
+		printf("Please enter a file or directory name.\n");
+		return;
+	}
+
+	// first we need to convert the entered entry name into the short name stored in the image
+	// allocate some space (max 11 chars) to store the returned short name
+	char * enteredShortName;
+	enteredShortName = generateShortName(enteredEntryName);
+
+	//printf("    -: entered short name: %s\n", &enteredShortName);
+
+	if(DBG)
+	{
+		printf("DEBUG: handleStat() ending...\n");
+	}
+
+	return;
+
+} // handleStat()
+
+char * generateShortName( char * enteredName )
+{
+	if(DBG)
+	{
+		printf("DEBUG: generateShortName() starting...\n");
+	}
+
+	// create array of chars and fill it with spaces
+	char outShortName[11];
+	int k;
+	for( k=0; k<11; k++)
+	{
+		outShortName[k] = 0x20;
+	}
+
+	int enteredNameLength = strlen(enteredName);
+
+	printf("entered name length: %d\n", enteredNameLength);
+	printf("entered name: %s\n", enteredName);
+
+	if(enteredNameLength == 1 && enteredName[0] == '.')
+	{
+		outShortName[0] = '.';
+	}
+	else if( enteredNameLength == 2 && enteredName[0] == '.' && enteredName[1] == '.')
+	{
+		outShortName[0] = '.';
+		outShortName[1] = '.';
+	}
+	else
+	{
+		// convert the entered characters to uppercase
+		int i;
+		for( i=0; i<enteredNameLength; i++)
+		{
+			enteredName[i] = toupper(enteredName[i]);
+			printf("%c",enteredName[i]);
+		}
+		printf("\n");
+
+		// prep for strcpsn() call
+		int dotPosition;
+		char * dot = ".";
+
+		// make the call. the '.' is used to see if one was entered. This determines 
+		// if the user is asking for a directory or a file
+		dotPosition = strcspn( enteredName, dot );
+
+		// if no dot was found, then they're looking for a directory
+		if( dotPosition == enteredNameLength )
+		{
+
+		}
+		else
+		{
+
+		}
+
+	}
+
+	if(DBG)
+	{
+		printf("DEBUG: generateShortName() ending...\n");
+	}
+
+}
 
 void cleanUp()
 {

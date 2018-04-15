@@ -1,9 +1,10 @@
+#include <ctype.h>
+#include <errno.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdbool.h>
 #include <string.h>
-#include <errno.h>
 #include <unistd.h>
 
 // enable/disable debug output
@@ -728,7 +729,6 @@ void handleLS()
 	uint16_t i;
 	for( i=0; i<numDirEntries; i++)
 	{
-		uint8_t firstCharOfName = dir[i].DIR_name[0];
 		uint8_t attr = dir[i].DIR_attr;
 
 		// per the assignment, the only entries to show by attribute are:
@@ -736,21 +736,90 @@ void handleLS()
 		// 0x10: subdirectory
 		// 0x20: archive flag
 		// so create a bitmask of those values to compare against
-		uint8_t attrBitmask = 0x01 | 0x10 | 0x20;
+		uint8_t attrBitmaskShow = 0x01 | 0x10 | 0x20;
+		//also create a bitmask of the other values that don't get shown
+		uint8_t attrBitmaskDontShow = 0x02 | 0x04 | 0x08;
 
 		// do the attribute bitwise comparison
-		// if any of the desired bits match, then the value will be >1
-		if( (attr | attrBitmask) > 1 )
+		// if any of the desired bits match, then the bitwise AND value will be >=1
+		// if none of the undesired bits match, then the bitwise AND value will be 0
+		// the attribute for long-name entries is 0x0F - don't deal with these
+		if( ((attr & attrBitmaskShow) >= 1) && ((attr & attrBitmaskDontShow) == 0) && attr != 0x0F )
 		{
-			printf("    -: entry %hu attr matches\n", i);
-		}
+			// for the attributes that match, do the check on the first filename char
+			uint8_t firstCharOfName = dir[i].DIR_name[0];
+			if( firstCharOfName != 0x00 && firstCharOfName != 0xE5)
+			{
+				// if we get here, then an entry's label will be displayed
+
+				// store a null-term'd copy of the full label
+				char rawLabel[12];
+				strncpy( rawLabel, dir[i].DIR_name, 11 );
+				rawLabel[11] = '\0';
+
+				// convert every char to lowercase
+				int k;
+				for( k=0; k<strlen(rawLabel); k++)
+				{
+					rawLabel[k] = tolower(rawLabel[k]);
+				}
+
+				// check if the entry is a subdirectory
+				if( attr == 0x10 )
+				{
+					int j;
+					for( j=10; j>=0; j--)
+					{
+						if(rawLabel[j] == 0x20)
+						{
+							rawLabel[j] = '\0';
+						}
+					}
+					printf("%s\n", rawLabel);
+				}
+				else
+				{
+					// isolate the extension
+					char extension[4];
+					strncpy( extension, &rawLabel[8], 3 );
+					extension[3] = '\0';
+					if(extension[2] == 0x20)
+					{
+						extension[2] = '\0';
+					}
+					if(extension[1] == 0x20)
+					{
+						extension[1] = '\0';
+					}
+
+					// isolate the file name
+					char fileName[9];
+					strncpy (fileName, rawLabel, 8);
+					fileName[8] = '\0';
+					int j;
+					for( j=7; j>=0; j-- )
+					{
+						if(fileName[j] == 0x20)
+						{
+							fileName[j] = '\0';
+						}
+					}
+
+					printf("%s.%s\n", fileName, extension);
+				}// if..else
+
+			}// if..else
+
+		}// if..else
 		
-	}
+	}// for
 
 	uint16_t test = 0x17d3; // FOLDERA address
 	printf("FOLDERA offset: %X\n", LBAToOffset(test));
 	printf("FOLDERA next block: %X\n", nextLB(test));
-	
+	printf("changing current dir to FOLDERA...\n");
+	currentSector = 0x17d3;
+	currentDir = "foldera";
 
 
 	if(DBG)

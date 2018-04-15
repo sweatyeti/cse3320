@@ -72,7 +72,7 @@ struct DirectoryEntry
 } __attribute__((__packed__));
 
 // declare the global directory array
-struct DirectoryEntry dir[16];
+struct DirectoryEntry dir[256];
 
 // declare the global BPB struct
 struct imageBPB bpb;
@@ -100,13 +100,14 @@ void cleanUp( void );
 char * getCurrentDir( void );
 void setCurrentDir( char * );
 void handleLS( void );
-bool readCurrDirEntries( uint8_t * );
+bool readCurrDirEntries( uint16_t * );
 
 int main( int argc, char *argv[] )
 {
 	// check for any configured cmdline options
 	char c;
-  while((c = getopt(argc,argv,"d"))!=-1) {
+  while((c = getopt(argc,argv,"d"))!=-1) 
+	{
     switch(c) {
       case 'd':
         DBG = true;
@@ -115,6 +116,11 @@ int main( int argc, char *argv[] )
 				break;
     }
   }
+
+	if(DBG)
+	{
+		printf("DEBUG: main() starting (after getopt)...\n");
+	}
 
 	// allocate memory to hold the string entered by the user in the mfs shell
 	char * cmd_str = (char*) malloc( MAX_COMMAND_SIZE );
@@ -274,7 +280,10 @@ int main( int argc, char *argv[] )
 		}
 	}// main loop
 
-	
+	if(DBG)
+	{
+		printf("DEBUG: main() exiting...\n");
+	}
 
 	exit(EXIT_SUCCESS);
 
@@ -519,7 +528,7 @@ void printVolumeName()
 
 }
 
-bool readCurrDirEntries(uint8_t * outNumEntries)
+bool readCurrDirEntries(uint16_t * outNumEntries)
 {
 	if(DBG)
 	{
@@ -527,6 +536,9 @@ bool readCurrDirEntries(uint8_t * outNumEntries)
 		printf("-----: current sector: %lu\n", currentSector);
 		printf("-----: sector starting addr: 0x%X\n", LBAToOffset(currentSector));
 	}
+
+	// back up the currentSector global, since it shouldn't technically change on 'ls' cmd
+	uint64_t currentSectorBackup = currentSector;
 
 	// clear the file error indicator
 	clearerr(fp);
@@ -553,7 +565,7 @@ bool readCurrDirEntries(uint8_t * outNumEntries)
 	clearerr(fp);
 
 	// initialize a counter to keep track of how many entries are present in the current dir
-	uint8_t numDirEntriesRead = 0;
+	uint16_t numDirEntriesRead = 0;
 
 	// loop that reads all teh directory entries
 	while(true)
@@ -564,6 +576,7 @@ bool readCurrDirEntries(uint8_t * outNumEntries)
 		}
 
 		// read one entry and increment the counter
+		// there will always be at least one entry since even an empty directory must have the '.' entry
 		fread( &dir[numDirEntriesRead], DIR_ENTRY_SIZE, 1, fp );
 
 		if(DBG)
@@ -577,24 +590,62 @@ bool readCurrDirEntries(uint8_t * outNumEntries)
 		}
 
 		numDirEntriesRead++;
-		
-		// check if root dir and break if the max # entries for it have been read, otherwise continue
-		if( currentSector == bpb.BPB_RootClus )
+
+		// check if we've reached the end of the sector
+		//if( numDirEntriesRead * DIR_ENTRY_SIZE == bpb.BPB_BytesPerSec )
+		if( (( numDirEntriesRead*DIR_ENTRY_SIZE ) % bpb.BPB_BytesPerSec) == 0 )
 		{
-			if( numDirEntriesRead < NUM_ROOT_DIR_ENTRIES )
+			// end of sector reached, check if there's a next one
+			int16_t nextSector = nextLB(currentSector);
+
+			if(DBG)
 			{
+				printf("-----: end of sector reached...\n");
+			}
+
+			if(nextSector != -1 )
+			{
+				// there's more data, update the global sector var
+				currentSector = nextSector;
+
+				int32_t nextSectorAddr = LBAToOffset(nextSector);
+
+				if(DBG)
+				{
+					printf("-----: next sec: %hd, next sec addr: %X, going there..\n", nextSector, nextSectorAddr);
+				}
+
+				// navigate to teh appropriate image location offset, and check if successful
+				if( fseek(fp, nextSectorAddr, SEEK_SET) != 0 )
+				{
+					printf("There was a problem performing this operation. Please try again.\n");
+					if(DBG)
+					{
+						if( ferror(fp) )
+						{
+							printf("ERROR -> fseek() failed getting to the next sector address.. ");
+						}
+						else if ( feof(fp) )
+						{
+							printf("ERROR -> fseek() reached EOF from next sector address.. ");
+						}
+					}
+					return false;
+				}
+
+				// we were able to fseek successfully, so continue the loop
 				continue;
 			}
 			else
 			{
+				// no more blocks, break out of the loop
 				if(DBG)
 				{
-					printf("-----: max # root entries reached, exiting loop..\n");
+					printf("-----: no more sectors to read...\n");
 				}
 				break;
 			}
 		}
-		// if not root and/or haven't read all entries, test to see if there's another entry, 
 		else
 		{
 			if(DBG)
@@ -643,9 +694,12 @@ bool readCurrDirEntries(uint8_t * outNumEntries)
 	// populate the uint8_t parameter with the number of entries read
 	*outNumEntries = numDirEntriesRead;
 
+	// restore the currentSector global
+	currentSector = currentSectorBackup;
+
 	if(DBG)
 	{
-		printf("-----: %hhu entries read\n", numDirEntriesRead);
+		printf("-----: %hu entries read\n", numDirEntriesRead);
 		printf("DEBUG: readCurrDirEntries() ending...\n");
 	}
 
@@ -665,7 +719,7 @@ void handleLS()
 		return;
 	}
 
-	uint8_t numDirEntries = 0;
+	uint16_t numDirEntries = 0;
 	if( !readCurrDirEntries(&numDirEntries) && DBG )
 	{
 		printf("ERROR -> readCurrDirEntries() had a problem...\n");
@@ -677,13 +731,6 @@ void handleLS()
 	uint16_t test = 0x17d3; // FOLDERA address
 	printf("FOLDERA offset: %X\n", LBAToOffset(test));
 	printf("FOLDERA next block: %X\n", nextLB(test));
-
-	int16_t next = nextLB(currentSector);
-	printf("current sector next block: %hd\n", next);
-	if(next != -1 )
-	{
-		printf("current sector next sector offset: %X\n", LBAToOffset(next));
-	}
 	
 
 

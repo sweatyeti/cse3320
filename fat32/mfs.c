@@ -23,6 +23,9 @@ bool DBG = false;
 // the image being consumed has 16 directory entries in root, define that here
 #define NUM_ROOT_DIR_ENTRIES 16   
 
+// directory entries are 32 bytes wide
+#define DIR_ENTRY_SIZE 32
+
 // declare the BPB struct, and tell GCC it's packed so we can read the entire BPB structure
 // in one fell swoop
 struct imageBPB
@@ -62,9 +65,9 @@ struct DirectoryEntry
 	char DIR_name[11];
 	uint8_t DIR_attr;
 	uint8_t unused1[8];
-	uint16_t DIR_firstClusterHigh;
+	uint8_t DIR_firstClusterHigh[2];
 	uint8_t unused[4];
-	uint16_t DIR_firstClusterLow;
+	uint8_t DIR_firstClusterLow[2];
 	uint32_t DIR_fileSize;
 } __attribute__((__packed__));
 
@@ -97,6 +100,7 @@ void cleanUp( void );
 char * getCurrentDir( void );
 void setCurrentDir( char * );
 void handleLS( void );
+bool readCurrDirEntries( uint8_t * );
 
 int main( int argc, char *argv[] )
 {
@@ -293,13 +297,17 @@ int main( int argc, char *argv[] )
 
 bool readImageMetadata()
 {
+	if(DBG)
+	{
+		printf("DEBUG: readImageMetadata() starting...\n");
+	}
 	// since we'll be reading from the file, make one final check to ensure the pointer is not NULL
 	if( fp == NULL )
 	{
 		printf("There was an error. Please try again.\n");
 		if(DBG)
 		{
-			printf("ERROR -> readImageMetadata(): at start of function, the fp file pointer is NULL\n");
+			printf("ERROR -> at start of function, the fp file pointer is NULL\n");
 		}
 		return false;
 	}
@@ -318,11 +326,15 @@ bool readImageMetadata()
 	{
 		if(DBG)
 		{
-			printf("ERROR -> readImageMetadata(): error from fread()\n");
+			printf("ERROR -> error from fread()\n");
 		}
 		return false;
 	}
 
+	if(DBG)
+	{
+		printf("DEBUG: readImageMetadata() ending...\n");
+	}
 	// if we got here, then all is good
 	return true;
 }
@@ -349,6 +361,10 @@ bool validateOpenCmd( char * requestedFilename )
 
 void tryOpenImage ( char * imageToOpen )
 {
+	if(DBG)
+	{
+		printf("DEBUG: tryOpenImage() starting...\n");
+	}
 	// reset errno for fopen call
 	errno = 0;
 
@@ -367,7 +383,7 @@ void tryOpenImage ( char * imageToOpen )
 			printf("There was an error opening the '%s' FAT32 image file. Please try again.\n", imageToOpen);
 			if(DBG)
 			{
-				printf("ERROR -> main(): fopen failed with error: %u: %s\n", errno, strerror(errno));
+				printf("ERROR -> fopen failed with error: %u: %s\n", errno, strerror(errno));
 			}
 		}
 		return;
@@ -385,6 +401,11 @@ void tryOpenImage ( char * imageToOpen )
 	// since the image was just opened, set the currentDir global to the root dir, along with the root sec #
 	currentDir = "root";
 	currentSector = bpb.BPB_RootClus;
+
+	if(DBG)
+	{
+		printf("DEBUG: tryOpenImage() ending...\n");
+	}
 
 	return;
 }
@@ -414,10 +435,21 @@ void tryCloseImage()
 
 	// ensure the currentDir global gets reset to NULL
 	currentDir = NULL;
+
+	if(DBG)
+	{
+		printf("DEBUG: tryCloseImage(): image closed...\n");
+	}
+	
+	return;
 }
 
 void printImageInfo()
 {
+	if(DBG)
+	{
+		printf("DEBUG: printImageInfo() starting...\n");
+	}
 	// make the de facto check to ensure an image has been opened, warn and bail if not
 	if( !imgAlreadyOpened() ) 
 	{
@@ -436,9 +468,10 @@ void printImageInfo()
 
 	if(DBG)
 	{
-		printf("DEBUG: printImageInfo(): BPB_RootClus: 0n%u, 0x%X\n", bpb.BPB_RootClus, bpb.BPB_RootClus);
+		printf("-----: BPB_RootClus: 0n%u, 0x%X\n", bpb.BPB_RootClus, bpb.BPB_RootClus);
 		uint32_t rootAddr = LBAToOffset(bpb.BPB_RootClus);
-		printf("DEBUG: printImageInfo(): root dir address = 0x%X\n", rootAddr);
+		printf("-----: root dir address = 0x%X\n", rootAddr);
+		printf("DEBUG: printImageInfo() ending...\n");
 	}
 
 	return;
@@ -486,19 +519,13 @@ void printVolumeName()
 
 }
 
-void handleLS()
+bool readCurrDirEntries(uint8_t * outNumEntries)
 {
-	// make the de facto check to ensure an image has been opened, warn and bail if not
-	if( !imgAlreadyOpened() ) 
-	{
-		printf("Error: File system image must be opened first.\n");
-		return;
-	}
-
 	if(DBG)
 	{
-		printf("DEBUG: handleLS(): current sector: %lu\n", currentSector);
-		printf("DEBUG: handleLS(): sector starting addr: 0x%X\n", LBAToOffset(currentSector));
+		printf("DEBUG: readCurrDirEntries() starting...\n");
+		printf("-----: current sector: %lu\n", currentSector);
+		printf("-----: sector starting addr: 0x%X\n", LBAToOffset(currentSector));
 	}
 
 	// clear the file error indicator
@@ -512,56 +539,160 @@ void handleLS()
 		{
 			if( ferror(fp) )
 			{
-				printf("ERROR -> handleLS(): fseek() failed at above address.. ");
+				printf("ERROR -> fseek() failed at above address.. ");
 			}
 			else if ( feof(fp) )
 			{
-				printf("ERROR -> handleLS(): fseek() reached EOF from above address.. ");
+				printf("ERROR -> fseek() reached EOF from above address.. ");
 			}
 		}
-		return;
+		return false;
 	}
 
 	// clear the file error indicator
 	clearerr(fp);
 
-	// check if we're reading the root dir, and read in the 16 directory entries if so
-	if( currentSector == bpb.BPB_RootClus )
-	{
-		fread( &dir, 32, NUM_ROOT_DIR_ENTRIES, fp );
-	}	
-	else
-	{
-		// do non-root stuff
-	}
+	// initialize a counter to keep track of how many entries are present in the current dir
+	uint8_t numDirEntriesRead = 0;
 
-	if( ferror(fp) )
+	// loop that reads all teh directory entries
+	while(true)
 	{
-		printf("There was a problem reading the image. Please try again.\n");
-		return;
-	}
+		if(DBG)
+		{
+			printf("-----: reading directory entry index #%d..\n", numDirEntriesRead);
+		}
 
-	// 
-	int i;
-	for( i=0; i<NUM_ROOT_DIR_ENTRIES; i++ )
-	{
-		char rawLabel[12];
-		strncpy( rawLabel, dir[i].DIR_name, 11 );
-		rawLabel[11] = '\0';
+		// read one entry and increment the counter
+		fread( &dir[numDirEntriesRead], DIR_ENTRY_SIZE, 1, fp );
 
-		//if(rawLabel[0] == '\x00' || rawLabel[0] == '\xe5' || rawLabel[0] == '\x')
+		if(DBG)
+		{
+			char rawLabel[12];
+			strncpy( rawLabel, dir[numDirEntriesRead].DIR_name, 11 );
+			rawLabel[11] = '\0';
+			printf("-----: raw directory entry label: %s\n", rawLabel);
+			printf("-----: first label char raw byte: 0x%X\n", rawLabel[0]);
+			printf("-----: directory entry index %hhu read..\n", numDirEntriesRead);
+		}
 
-	if(DBG)
-	{
-			printf("DEBUG: handleLS(): raw directory entry label: %s\n", rawLabel);
-			printf("DEBUG: handleLS(): first label char raw byte: 0x%X\n", rawLabel[0]);
+		numDirEntriesRead++;
+		
+		// check if root dir and break if the max # entries for it have been read, otherwise continue
+		if( currentSector == bpb.BPB_RootClus )
+		{
+			if( numDirEntriesRead < NUM_ROOT_DIR_ENTRIES )
+			{
+				continue;
+			}
+			else
+			{
+				if(DBG)
+				{
+					printf("-----: max # root entries reached, exiting loop..\n");
+				}
+				break;
+			}
+		}
+		// if not root and/or haven't read all entries, test to see if there's another entry, 
+		else
+		{
+			if(DBG)
+			{
+				printf("-----: checking next possible dir entry..\n");
+			}
+
+			// store the current position of the stream so it can be restored
+			fpos_t streamPosition;
+			fgetpos(fp, &streamPosition);
+
+			// read one byte into testDir, which could be the start of a new directory entry
+			uint8_t testDir = 0;
+			fread( &testDir, 1, 1, fp );
+
+			// restore the file stream position from before the fread
+			fsetpos(fp, &streamPosition);
+
+			// if testDir is still zero (0), then break out of the loop, otherwise continue and read another entry
+			if( testDir == 0 )
+			{
+				if(DBG)
+				{
+					printf("-----: no more directory entries, exiting loop..\n");
+				}
+				break;
+			}
+			else
+			{
+				if(DBG)
+				{
+					printf("-----: next entry exists, continuing loop..\n");
+				}
+				continue;
+			}
 		}
 	}
 
+	// check for any file errors
+	if( ferror(fp) )
+	{
+		printf("There was a problem reading the image. Please try again.\n");
+		return false;
+	}
+
+	// populate the uint8_t parameter with the number of entries read
+	*outNumEntries = numDirEntriesRead;
+
+	if(DBG)
+	{
+		printf("-----: %hhu entries read\n", numDirEntriesRead);
+		printf("DEBUG: readCurrDirEntries() ending...\n");
+	}
+
+	return true;
+} // readCurrDirEntries()
+
+void handleLS()
+{
+	if(DBG)
+	{
+		printf("DEBUG: handleLS() starting...\n");
+	}
+	// make the de facto check to ensure an image has been opened, warn and bail if not
+	if( !imgAlreadyOpened() ) 
+	{
+		printf("Error: File system image must be opened first.\n");
+		return;
+	}
+
+	uint8_t numDirEntries = 0;
+	if( !readCurrDirEntries(&numDirEntries) && DBG )
+	{
+		printf("ERROR -> readCurrDirEntries() had a problem...\n");
+		return;
+	}
+
+	
+
+	uint16_t test = 0x17d3; // FOLDERA address
+	printf("FOLDERA offset: %X\n", LBAToOffset(test));
+	printf("FOLDERA next block: %X\n", nextLB(test));
+
+	int16_t next = nextLB(currentSector);
+	printf("current sector next block: %hd\n", next);
+	if(next != -1 )
+	{
+		printf("current sector next sector offset: %X\n", LBAToOffset(next));
+	}
+	
 
 
+	if(DBG)
+	{
+		printf("DEBUG: handleLS() ending...\n");
+	}
 	return;
-}
+} // handleLS()
 
 void cleanUp()
 {
@@ -597,7 +728,7 @@ int32_t LBAToOffset( uint64_t sector )
  * 
  * description: 
  *  Given a logical block address, look up into the first FAT and return the logical block address of 
- *   the block in the file. If there are no further blocks, return -1.
+ *   the next block in the file. If there are no further blocks, return -1.
  * 
  * parameters:
  *  uint64_t sector: the block address which to calculate the next address for

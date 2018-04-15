@@ -477,9 +477,9 @@ void printImageInfo()
 
 	if(DBG)
 	{
-		printf("-----: BPB_RootClus: 0n%u, 0x%X\n", bpb.BPB_RootClus, bpb.BPB_RootClus);
+		printf("    -: BPB_RootClus: 0n%u, 0x%X\n", bpb.BPB_RootClus, bpb.BPB_RootClus);
 		uint32_t rootAddr = LBAToOffset(bpb.BPB_RootClus);
-		printf("-----: root dir address = 0x%X\n", rootAddr);
+		printf("    -: root dir address = 0x%X\n", rootAddr);
 		printf("DEBUG: printImageInfo() ending...\n");
 	}
 
@@ -533,8 +533,8 @@ bool readCurrDirEntries(uint16_t * outNumEntries)
 	if(DBG)
 	{
 		printf("DEBUG: readCurrDirEntries() starting...\n");
-		printf("-----: current sector: %lu\n", currentSector);
-		printf("-----: sector starting addr: 0x%X\n", LBAToOffset(currentSector));
+		printf("    -: current sector: %lu\n", currentSector);
+		printf("    -: sector starting addr: 0x%X\n", LBAToOffset(currentSector));
 	}
 
 	// back up the currentSector global, since it shouldn't technically change on 'ls' cmd
@@ -572,7 +572,7 @@ bool readCurrDirEntries(uint16_t * outNumEntries)
 	{
 		if(DBG)
 		{
-			printf("-----: reading directory entry index #%d..\n", numDirEntriesRead);
+			printf("    -: reading directory entry index #%d..\n", numDirEntriesRead);
 		}
 
 		// read one entry and increment the counter
@@ -584,9 +584,9 @@ bool readCurrDirEntries(uint16_t * outNumEntries)
 			char rawLabel[12];
 			strncpy( rawLabel, dir[numDirEntriesRead].DIR_name, 11 );
 			rawLabel[11] = '\0';
-			printf("-----: raw directory entry label: %s\n", rawLabel);
-			printf("-----: first label char raw byte: 0x%X\n", rawLabel[0]);
-			printf("-----: directory entry index %hhu read..\n", numDirEntriesRead);
+			printf("    -: raw directory entry label: %s\n", rawLabel);
+			printf("    -: first label char raw byte: 0x%X\n", rawLabel[0]);
+			printf("    -: directory entry index %hhu read..\n", numDirEntriesRead);
 		}
 
 		numDirEntriesRead++;
@@ -600,7 +600,7 @@ bool readCurrDirEntries(uint16_t * outNumEntries)
 
 			if(DBG)
 			{
-				printf("-----: end of sector reached...\n");
+				printf("    -: end of sector reached...\n");
 			}
 
 			if(nextSector != -1 )
@@ -612,7 +612,7 @@ bool readCurrDirEntries(uint16_t * outNumEntries)
 
 				if(DBG)
 				{
-					printf("-----: next sec: %hd, next sec addr: %X, going there..\n", nextSector, nextSectorAddr);
+					printf("    -: next sec: %hd, next sec addr: %X, going there..\n", nextSector, nextSectorAddr);
 				}
 
 				// navigate to teh appropriate image location offset, and check if successful
@@ -630,6 +630,8 @@ bool readCurrDirEntries(uint16_t * outNumEntries)
 							printf("ERROR -> fseek() reached EOF from next sector address.. ");
 						}
 					}
+					// restore the currentSector global
+					currentSector = currentSectorBackup;
 					return false;
 				}
 
@@ -641,7 +643,7 @@ bool readCurrDirEntries(uint16_t * outNumEntries)
 				// no more blocks, break out of the loop
 				if(DBG)
 				{
-					printf("-----: no more sectors to read...\n");
+					printf("    -: no more sectors to read...\n");
 				}
 				break;
 			}
@@ -650,7 +652,7 @@ bool readCurrDirEntries(uint16_t * outNumEntries)
 		{
 			if(DBG)
 			{
-				printf("-----: checking next possible dir entry..\n");
+				printf("    -: checking next possible dir entry..\n");
 			}
 
 			// store the current position of the stream so it can be restored
@@ -669,7 +671,7 @@ bool readCurrDirEntries(uint16_t * outNumEntries)
 			{
 				if(DBG)
 				{
-					printf("-----: no more directory entries, exiting loop..\n");
+					printf("    -: no more directory entries, exiting loop..\n");
 				}
 				break;
 			}
@@ -677,7 +679,7 @@ bool readCurrDirEntries(uint16_t * outNumEntries)
 			{
 				if(DBG)
 				{
-					printf("-----: next entry exists, continuing loop..\n");
+					printf("    -: next entry exists, continuing loop..\n");
 				}
 				continue;
 			}
@@ -688,6 +690,8 @@ bool readCurrDirEntries(uint16_t * outNumEntries)
 	if( ferror(fp) )
 	{
 		printf("There was a problem reading the image. Please try again.\n");
+		// restore the currentSector global
+		currentSector = currentSectorBackup;
 		return false;
 	}
 
@@ -699,7 +703,7 @@ bool readCurrDirEntries(uint16_t * outNumEntries)
 
 	if(DBG)
 	{
-		printf("-----: %hu entries read\n", numDirEntriesRead);
+		printf("    -: %hu entries read\n", numDirEntriesRead);
 		printf("DEBUG: readCurrDirEntries() ending...\n");
 	}
 

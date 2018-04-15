@@ -764,8 +764,19 @@ void handleLS()
 					rawLabel[k] = tolower(rawLabel[k]);
 				}
 
+				// check if we're dealing with the . and .. entries
+				if( i == 0 && firstCharOfName == '.' && dir[i].DIR_name[1] == 0x20 )
+				{
+					// this is the dot entry
+					printf(".\n");
+				}
+				else if( i== 1 && firstCharOfName == '.' && dir[i].DIR_name[1] == '.' && dir[i].DIR_name[2] == 0x20 )
+				{
+					// this is the dotdot entry
+					printf("..\n");
+				}
 				// check if the entry is a subdirectory
-				if( attr == 0x10 )
+				else if( attr == 0x10)
 				{
 					int j;
 					for( j=10; j>=0; j--)

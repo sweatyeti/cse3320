@@ -72,6 +72,12 @@ struct DirectoryEntry
 // declare the global directory array
 struct DirectoryEntry dir[256];
 
+// declare & init a global short to keep track of the # of dir entries currently read
+uint16_t numDirEntries = 0;
+
+// declare & init a global bool to keep track of whether or not the current dir's entries have been read
+bool currDirEntriesRead = false;
+
 // declare the global BPB struct
 struct imageBPB bpb;
 
@@ -98,9 +104,9 @@ void cleanUp( void );
 char * getCurrentDir( void );
 void setCurrentDir( char * );
 void handleLS( void );
-bool readCurrDirEntries( uint16_t * );
+bool readCurrDirEntries( void );
 void handleStat( char * );
-bool generateShortName( char *, char *);
+bool generateShortName( char *, char *, bool *);
 
 int main( int argc, char *argv[] )
 {
@@ -406,6 +412,13 @@ void tryOpenImage ( char * imageToOpen )
 	currentDir = "root";
 	currentSector = bpb.BPB_RootClus;
 
+	// populate the global directory entry array with the contents of the root dir
+	if( !readCurrDirEntries() && DBG )
+	{
+		printf("ERROR -> readCurrDirEntries() had a problem...\n");
+		return;
+	}
+
 	if(DBG)
 	{
 		printf("DEBUG: tryOpenImage() ending...\n");
@@ -523,7 +536,7 @@ void printVolumeName()
 
 }
 
-bool readCurrDirEntries(uint16_t * outNumEntries)
+bool readCurrDirEntries()
 {
 	if(DBG)
 	{
@@ -691,8 +704,8 @@ bool readCurrDirEntries(uint16_t * outNumEntries)
 		return false;
 	}
 
-	// populate the uint8_t parameter with the number of entries read
-	*outNumEntries = numDirEntriesRead;
+	// populate the global with the number of entries read
+	numDirEntries = numDirEntriesRead;
 
 	// restore the currentSector global
 	currentSector = currentSectorBackup;
@@ -702,6 +715,9 @@ bool readCurrDirEntries(uint16_t * outNumEntries)
 		printf("    -: %hu entries read\n", numDirEntriesRead);
 		printf("DEBUG: readCurrDirEntries() ending...\n");
 	}
+
+	// set the global to let the program know the entries have been read
+	currDirEntriesRead = true;
 
 	return true;
 } // readCurrDirEntries()
@@ -719,12 +735,13 @@ void handleLS()
 		return;
 	}
 
-	// initialize a 2-byte number to hold the # of entries, supplied by readCurrDirEntries()
-	uint16_t numDirEntries = 0;
-	if( !readCurrDirEntries(&numDirEntries) && DBG )
+	if(!currDirEntriesRead)
 	{
-		printf("ERROR -> readCurrDirEntries() had a problem...\n");
-		return;
+		if( !readCurrDirEntries() && DBG )
+		{
+			printf("ERROR -> readCurrDirEntries() had a problem...\n");
+			return;
+		}
 	}
 
 	// loop through each directory entry and display the necessary info
@@ -830,9 +847,9 @@ void handleLS()
 	uint16_t test = 0x17d3; // FOLDERA address
 	printf("FOLDERA offset: %X\n", LBAToOffset(test));
 	printf("FOLDERA next block: %X\n", nextLB(test));
-	printf("changing current dir to FOLDERA...\n");
+	/*printf("changing current dir to FOLDERA...\n");
 	currentSector = 0x17d3;
-	currentDir = "foldera";
+	currentDir = "foldera";*/
 
 
 	if(DBG)
@@ -863,17 +880,97 @@ void handleStat( char * enteredEntryName )
 	}
 
 	// first we need to convert the entered entry name into the short name stored in the image
-	//char * enteredShortName;
-	//enteredShortName = generateShortName(enteredEntryName);
-
-	char shortName[11];
+	char enteredShortName[12];
 	
-	if(!generateShortName(enteredEntryName, shortName))
+	// generateShortName returns true if it was able to generate a legit short name
+	// if it failed, then warn and bail
+	bool isDirectory = false;
+	if(!generateShortName(enteredEntryName, enteredShortName, &isDirectory))
+	{
+		printf("Error: File not found\n");
+		return;
+	}
+	enteredShortName[11] = '\0';
+
+	if(!currDirEntriesRead)
+	{
+		if( !readCurrDirEntries() && DBG )
+		{
+			printf("ERROR -> readCurrDirEntries() had a problem...\n");
+			return;
+		}
+	}
+
+	// create a bool to check whether a matching entry was found
+	bool matchFound = false;
+
+	// loop through the global dir array to check for a match
+	int i;
+	char matchedLabel[12];
+	matchedLabel[11] = '\0';
+	for( i=0; i<numDirEntries; i++)
+	{
+		char rawLabel[12];
+		strncpy( rawLabel, dir[i].DIR_name, 11 );
+		rawLabel[11] = '\0';
+		if( strcmp(enteredShortName, rawLabel) == 0 )
+		{
+			matchFound = true;
+			strncpy( matchedLabel, rawLabel, 11 );
+			break;
+		}
+	}
+
+	if(matchFound)
+	{
+		printf("Entered value: %s\n", enteredEntryName);
+		printf("Directory entry raw label: %s\n", matchedLabel);
+		printf("Directory entry attributes:\n");
+
+		if( (dir[i].DIR_attr & 0x01) == 0x01 )
+		{
+			printf(" - 0x01: ATTR_READ_ONLY\n");
+		}
+		if( (dir[i].DIR_attr & 0x02) == 0x02 )
+		{
+			printf(" - 0x02: ATTR_HIDDEN\n");
+		}
+		if( (dir[i].DIR_attr & 0x04) == 0x04 )
+		{
+			printf(" - 0x04: ATTR_SYSTEM\n");
+		}
+		if( (dir[i].DIR_attr & 0x08) == 0x08 )
+		{
+			printf(" - 0x08: ATTR_VOLUME_ID\n");
+		}
+		if( (dir[i].DIR_attr & 0x10) == 0x010 )
+		{
+			printf(" - 0x10: ATTR_DIRECTORY\n");
+		}
+		if( (dir[i].DIR_attr & 0x20) == 0x20 )
+		{
+			printf(" - 0x20: ATTR_ARCHIVE\n");
+		}
+
+		uint8_t attrLongName = 0x01|0x02|0x04|0x08;
+		if( (dir[i].DIR_attr & attrLongName) == attrLongName )
+		{
+			printf(" - 0x%hhX: ATTR_LONG_NAME\n");
+		}
+		if(isDirectory)
+		{
+			printf("File size: 0 bytes\n");
+		}
+		else
+		{
+			printf("File size: %d (0x%X) bytes\n", dir[i].DIR_fileSize, dir[i].DIR_fileSize);
+		}
+	}
+	else
 	{
 		printf("Error: File not found\n");
 	}
-
-	//printf("    -: entered short name: %s\n", &enteredShortName);
+	
 
 	if(DBG)
 	{
@@ -884,7 +981,7 @@ void handleStat( char * enteredEntryName )
 
 } // handleStat()
 
-bool generateShortName( char * enteredName, char * outShortName )
+bool generateShortName( char * enteredName, char * outShortName, bool * outIsDirectory )
 {
 	if(DBG)
 	{
@@ -916,11 +1013,13 @@ bool generateShortName( char * enteredName, char * outShortName )
 	if(enteredNameLength == 1 && enteredName[0] == '.')
 	{
 		outShortName[0] = '.';
+		*outIsDirectory = true;
 	}
 	else if( enteredNameLength == 2 && enteredName[0] == '.' && enteredName[1] == '.')
 	{
 		outShortName[0] = '.';
 		outShortName[1] = '.';
+		*outIsDirectory = true;
 	}
 	else if( enteredNameLength >= 2 && enteredName[0] == '.' )
 	{
@@ -962,6 +1061,7 @@ bool generateShortName( char * enteredName, char * outShortName )
 			}
 			// copy just the entered (and capitalized) name letters to be returned
 			strncpy( outShortName, enteredName, enteredNameLength );
+			*outIsDirectory = true;
 		}
 		else if( dotPosition > 8 )
 		{
@@ -997,6 +1097,11 @@ bool generateShortName( char * enteredName, char * outShortName )
 			if(enteredExtnLength > 0)
 			{
 				strncpy( &outShortName[8], &enteredName[dotPosition+1], enteredExtnLength );
+			}
+			else
+			{
+				// if there is nothing after the dot, then the entry is a directory
+				*outIsDirectory = true;
 			}
 		}
 	}

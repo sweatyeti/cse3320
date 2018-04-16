@@ -1,5 +1,6 @@
 #include <ctype.h>
 #include <errno.h>
+#include <limits.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -63,9 +64,9 @@ struct DirectoryEntry
 	char DIR_name[11];
 	uint8_t DIR_attr;
 	uint8_t unused1[8];
-	uint8_t DIR_firstClusterHigh[2];
+	uint16_t DIR_firstClusterHigh;
 	uint8_t unused[4];
-	uint8_t DIR_firstClusterLow[2];
+	uint16_t DIR_firstClusterLow;
 	uint32_t DIR_fileSize;
 } __attribute__((__packed__));
 
@@ -106,7 +107,11 @@ void setCurrentDir( char * );
 void handleLS( void );
 bool readCurrDirEntries( void );
 void handleStat( char * );
-bool generateShortName( char *, char *, bool *);
+bool generateShortName( char *, char *, bool *, bool *, bool *);
+void handleCd( char * );
+void handleRead( char *, char *, char * );
+bool findDirEntry( char *, int * );
+//uint32_t getFullCluster( struct DirectoryEntry );
 
 int main( int argc, char *argv[] )
 {
@@ -162,6 +167,13 @@ int main( int argc, char *argv[] )
 
 		// Parse input - use MAX...+1 because we need to accept 3 params PLUS the command
 		char * tokens[MAX_NUM_ARGUMENTS+1];
+
+		// ensure every element of the tokens array is NULL
+		int i;
+		for( i=0; i<MAX_NUM_ARGUMENTS+1; i++)
+		{
+			tokens[i] = NULL;
+		}
 
 		int token_count = 0;                                 
 		
@@ -258,7 +270,7 @@ int main( int argc, char *argv[] )
 
 		if( strcmp(command, "cd") == 0)
 		{
-
+			handleCd(tokens[1]);
 			continue;
 		}
 
@@ -270,7 +282,7 @@ int main( int argc, char *argv[] )
 
 		if( strcmp(command, "read") == 0)
 		{
-
+			handleRead(tokens[1], tokens[2], tokens[3]);
 			continue;
 		}
 
@@ -339,11 +351,6 @@ bool readImageMetadata()
 			printf("ERROR -> error from fread()\n");
 		}
 		return false;
-	}
-
-	if(DBG)
-	{
-		printf("DEBUG: readImageMetadata() ending...\n");
 	}
 	// if we got here, then all is good
 	return true;
@@ -419,11 +426,6 @@ void tryOpenImage ( char * imageToOpen )
 		return;
 	}
 
-	if(DBG)
-	{
-		printf("DEBUG: tryOpenImage() ending...\n");
-	}
-
 	return;
 }
 
@@ -488,7 +490,6 @@ void printImageInfo()
 		printf("    -: BPB_RootClus: 0n%u, 0x%X\n", bpb.BPB_RootClus, bpb.BPB_RootClus);
 		uint32_t rootAddr = LBAToOffset(bpb.BPB_RootClus);
 		printf("    -: root dir address = 0x%X\n", rootAddr);
-		printf("DEBUG: printImageInfo() ending...\n");
 	}
 
 	return;
@@ -534,6 +535,7 @@ void printVolumeName()
 		printf("Volume name: '%s'\n", volLabel);
 	}
 
+	return;
 }
 
 bool readCurrDirEntries()
@@ -713,7 +715,6 @@ bool readCurrDirEntries()
 	if(DBG)
 	{
 		printf("    -: %hu entries read\n", numDirEntriesRead);
-		printf("DEBUG: readCurrDirEntries() ending...\n");
 	}
 
 	// set the global to let the program know the entries have been read
@@ -721,6 +722,174 @@ bool readCurrDirEntries()
 
 	return true;
 } // readCurrDirEntries()
+
+void handleRead( char * fileToBeRead, char * filePosStr, char * numBytesStr)
+{
+	if(DBG)
+	{
+		printf("DEBUG: handleRead() starting...\n");
+	}
+
+	// make the de facto check to ensure an image has been opened, warn and bail if not
+	if( !imgAlreadyOpened() ) 
+	{
+		printf("Error: File system image must be opened first.\n");
+		return;
+	}
+
+	// check if any of the req'd params are NULL, warn and bail if so
+	if(fileToBeRead == NULL || filePosStr == NULL || numBytesStr == NULL)
+	{
+		printf("Please enter a valid read command, such as 'read foo.txt 0 20'\n");
+		if(DBG)
+		{
+			printf("    -: a param is NULL\n");
+		}
+		return;
+	}
+
+	int64_t filePos;
+
+	// check the position to start with
+	// if nonzero, convert the chars to int64_t
+	if(strcmp(filePosStr,"0") == 0)
+	{
+		filePos = 0;
+	}
+	else
+	{
+		// ensure the param can be converted without issue
+		filePos = strtol(filePosStr, NULL, 10);
+		if( filePos == 0 || filePos == LONG_MAX || filePos == LONG_MIN )
+		{
+			printf("Please enter a valid read command, such as 'read foo.txt 0 20'\n");
+			if(DBG)
+			{
+				printf("    -: filePos couldn't be converted\n");
+			}
+			return;
+		}
+	}
+
+	int64_t numBytes;
+
+	// check how many bytes to read
+	// if nonzero, convert the chars to int64_t
+	if(strcmp(numBytesStr, "0") == 0)
+	{
+		numBytes = 0;
+	}
+	else
+	{
+		// ensure the param can be converted without issue
+		numBytes = strtol(numBytesStr, NULL, 10);
+		if( numBytes == 0 || numBytes == LONG_MAX || numBytes == LONG_MIN )
+		{
+			printf("Please enter a valid read command, such as 'read foo.txt 0 20'\n");
+			if(DBG)
+			{
+				printf("    -: numBytes couldn't be converted\n");
+			}
+			return;
+		}
+	}	
+
+	// first we need to convert the entered entry name into the short name stored in the image
+	char enteredShortName[12];
+	
+	// generateShortName returns true if it was able to generate a legit short name
+	// if it failed, then warn and bail
+	bool isDirectory = false;
+	bool isDot = false;
+	bool isDotDot = false;
+	if(!generateShortName(fileToBeRead, enteredShortName, &isDirectory, &isDot, & isDotDot))
+	{
+		printf("Error: File not found\n");
+		return;
+	}
+	enteredShortName[11] = '\0';
+
+	// can't read from a directory, warn and bail if that's what the user tried
+	if(isDirectory)
+	{
+		printf("Please enter a valid read command, such as 'read foo.txt 0 20'\n");
+		if(DBG)
+		{
+			printf("    -: can't read from a directory\n");
+		}
+		return;
+	}
+
+	// ensure the current dir entries have been read
+	if(!currDirEntriesRead)
+	{
+		if( !readCurrDirEntries() && DBG )
+		{
+			printf("ERROR -> readCurrDirEntries() had a problem...\n");
+			return;
+		}
+	}
+
+	int index = 0;
+	if(findDirEntry(enteredShortName, &index))
+	{
+		// make doubly sure we're not trying to read from a directory
+		if((dir[index].DIR_attr | 0x10) == 0x10)
+		{
+			printf("Please enter a valid read command, such as 'read foo.txt 0 20'\n");
+			if(DBG)
+			{
+				printf("    -: can't read from a directory\n");
+			}
+			return;
+		}
+
+		// ensure the desired position is within the file
+		if(filePos > dir[index].DIR_fileSize)
+		{
+			printf("Please enter a valid position within the requested file.\n");
+			return;
+		}
+
+		// backup the current sector so it can be restored after the read
+		uint64_t currentSectorBackup = currentSector;
+
+		currentSector = dir[index].DIR_firstClusterLow;
+
+		// figure out if the desired position is in another sector
+		uint64_t filePosSector = filePos / bpb.BPB_BytesPerSec;
+
+		// adjust the current sector if needed
+		int i;
+		for( i=0; i<filePosSector; i++)
+		{
+			currentSector = nextLB(currentSector);
+		}
+
+		// adjust the position indicator based on the sector
+		filePos -= (bpb.BPB_BytesPerSec * filePosSector);
+
+		// goto the location in the file
+		fseek(fp, LBAToOffset(currentSector)+filePos, SEEK_SET);
+
+		// loop that reads and prints
+		int byteCount;
+		for( byteCount=0; byteCount<numBytes; byteCount++)
+		{
+
+		}
+
+
+
+		currentSector = currentSectorBackup;
+
+	}
+	else
+	{
+		printf("Error: File not found\n");
+	}
+
+} // handleRead()
 
 void handleLS()
 {
@@ -735,6 +904,7 @@ void handleLS()
 		return;
 	}
 
+	// ensure the current dir entries have been read
 	if(!currDirEntriesRead)
 	{
 		if( !readCurrDirEntries() && DBG )
@@ -844,20 +1014,132 @@ void handleLS()
 		
 	}// for
 
-	uint16_t test = 0x17d3; // FOLDERA address
-	printf("FOLDERA offset: %X\n", LBAToOffset(test));
-	printf("FOLDERA next block: %X\n", nextLB(test));
-	/*printf("changing current dir to FOLDERA...\n");
-	currentSector = 0x17d3;
-	currentDir = "foldera";*/
-
-
-	if(DBG)
-	{
-		printf("DEBUG: handleLS() ending...\n");
-	}
 	return;
 } // handleLS()
+
+void handleCd( char * enteredDirName )
+{
+	if(DBG)
+	{
+		printf("DEBUG: handleCd() starting...\n");
+	}
+	// make the de facto check to ensure an image has been opened, warn and bail if not
+	if( !imgAlreadyOpened() ) 
+	{
+		printf("Error: File system image must be opened first.\n");
+		return;
+	}
+
+	// ensure the user entered a dir name
+	if( enteredDirName == NULL )
+	{
+		printf("Please enter a directory name.\n");
+		return;
+	}
+
+	// TODO: handle '/' and other absolute locations, along with relative locations
+	int enteredDirNameLength = strlen(enteredDirName);
+
+	// check if the user wants to move to an absolute or relative location
+	if( enteredDirName[0] == '/' || enteredDirName[0] == '\\')
+	{
+		if(enteredDirNameLength == 1)
+		{
+			// user is asking to move to root, do so
+			currentDir = "root";
+			currentSector = bpb.BPB_RootClus;
+			return;
+		}
+		else
+		{
+			//handle other absolute moves
+		}
+	}
+	else if( (strchr(enteredDirName,'\\') != NULL) || (strchr(enteredDirName,'/') != NULL) )
+	{
+		// user wants to move to a relative location that would take more than one step (ie cd ../name)
+	}
+	else
+	{
+		// user wants to move to a relative location in one step (ie cd . or cd foldera)
+
+
+	}
+
+	char enteredShortName[12];
+	
+	// generateShortName returns true if it was able to generate a legit short name
+	// if it failed, then warn and bail
+	bool isDirectory = false;
+	bool isDot = false;
+	bool isDotDot = false;
+	if(!generateShortName(enteredDirName, enteredShortName, &isDirectory, &isDot, &isDotDot))
+	{
+		printf("Error: Please enter a valid directory name.\n");
+		return;
+	}
+	// if a short name could be generated, check if the entered entry is a directory name, 
+	// warn and bail if not
+	else if(!isDirectory)
+	{
+		printf("Error: Please enter a valid directory name.\n");
+		return;
+	}
+	enteredShortName[11] = '\0';
+
+	// check to ensure the user hasn't selected . or .. if in the root dir, warn and bail if so
+	if(currentSector == bpb.BPB_RootClus && ( isDot || isDotDot ) )
+	{
+		printf("Error: Please enter a valid directory name.\n");
+		return;
+	}
+
+	// ensure the directories have been read before traversing through them
+	if(!currDirEntriesRead)
+	{
+		if( !readCurrDirEntries() && DBG )
+		{
+			printf("ERROR -> readCurrDirEntries() had a problem...\n");
+			return;
+		}
+	}
+
+	// check for . and .. entries first, since they will be the first 2 records of a non-root directory
+	if(isDot)
+	{
+		// dot is the first entry of a directory
+
+	}
+	else if(isDotDot)
+	{
+
+	}
+	else
+	{
+		// create a bool to check whether a matching entry was found
+		bool matchFound = false;
+
+		// loop through the global dir array to check for a match
+		int i;
+		char matchedLabel[12];
+		matchedLabel[11] = '\0';
+		for( i=0; i<numDirEntries; i++)
+		{
+			char rawLabel[12];
+			strncpy( rawLabel, dir[i].DIR_name, 11 );
+			rawLabel[11] = '\0';
+			if( strcmp(enteredShortName, rawLabel) == 0 )
+			{
+				matchFound = true;
+				strncpy( matchedLabel, rawLabel, 11 );
+				break;
+			}
+		}
+	}
+
+
+
+} // handleCd()
 
 void handleStat( char * enteredEntryName )
 {
@@ -885,13 +1167,16 @@ void handleStat( char * enteredEntryName )
 	// generateShortName returns true if it was able to generate a legit short name
 	// if it failed, then warn and bail
 	bool isDirectory = false;
-	if(!generateShortName(enteredEntryName, enteredShortName, &isDirectory))
+	bool isDot = false;
+	bool isDotDot = false;
+	if(!generateShortName(enteredEntryName, enteredShortName, &isDirectory, &isDot, & isDotDot))
 	{
 		printf("Error: File not found\n");
 		return;
 	}
 	enteredShortName[11] = '\0';
 
+	// ensure the directories have been read before traversing through them
 	if(!currDirEntriesRead)
 	{
 		if( !readCurrDirEntries() && DBG )
@@ -901,87 +1186,70 @@ void handleStat( char * enteredEntryName )
 		}
 	}
 
-	// create a bool to check whether a matching entry was found
-	bool matchFound = false;
-
-	// loop through the global dir array to check for a match
-	int i;
-	char matchedLabel[12];
-	matchedLabel[11] = '\0';
-	for( i=0; i<numDirEntries; i++)
+	int index = 0;
+	if(findDirEntry(enteredShortName, &index))
 	{
-		char rawLabel[12];
-		strncpy( rawLabel, dir[i].DIR_name, 11 );
-		rawLabel[11] = '\0';
-		if( strcmp(enteredShortName, rawLabel) == 0 )
-		{
-			matchFound = true;
-			strncpy( matchedLabel, rawLabel, 11 );
-			break;
-		}
-	}
-
-	if(matchFound)
-	{
+		// print friendly name and short name
 		printf("Entered value: %s\n", enteredEntryName);
-		printf("Directory entry raw label: %s\n", matchedLabel);
+		printf("Directory entry raw label: %s\n", enteredShortName);
+
+		// print attributes
 		printf("Directory entry attributes:\n");
 
-		if( (dir[i].DIR_attr & 0x01) == 0x01 )
+		if( (dir[index].DIR_attr & 0x01) == 0x01 )
 		{
 			printf(" - 0x01: ATTR_READ_ONLY\n");
 		}
-		if( (dir[i].DIR_attr & 0x02) == 0x02 )
+		if( (dir[index].DIR_attr & 0x02) == 0x02 )
 		{
 			printf(" - 0x02: ATTR_HIDDEN\n");
 		}
-		if( (dir[i].DIR_attr & 0x04) == 0x04 )
+		if( (dir[index].DIR_attr & 0x04) == 0x04 )
 		{
 			printf(" - 0x04: ATTR_SYSTEM\n");
 		}
-		if( (dir[i].DIR_attr & 0x08) == 0x08 )
+		if( (dir[index].DIR_attr & 0x08) == 0x08 )
 		{
 			printf(" - 0x08: ATTR_VOLUME_ID\n");
 		}
-		if( (dir[i].DIR_attr & 0x10) == 0x010 )
+		if( (dir[index].DIR_attr & 0x10) == 0x010 )
 		{
 			printf(" - 0x10: ATTR_DIRECTORY\n");
 		}
-		if( (dir[i].DIR_attr & 0x20) == 0x20 )
+		if( (dir[index].DIR_attr & 0x20) == 0x20 )
 		{
 			printf(" - 0x20: ATTR_ARCHIVE\n");
 		}
 
 		uint8_t attrLongName = 0x01|0x02|0x04|0x08;
-		if( (dir[i].DIR_attr & attrLongName) == attrLongName )
+		if( (dir[index].DIR_attr & attrLongName) == attrLongName )
 		{
 			printf(" - 0x%hhX: ATTR_LONG_NAME\n");
 		}
+
+		// print starting cluster
+		printf("Starting cluster: %hX\n", dir[index].DIR_firstClusterLow);
+
+		// print size
 		if(isDirectory)
 		{
 			printf("File size: 0 bytes\n");
 		}
 		else
 		{
-			printf("File size: %d (0x%X) bytes\n", dir[i].DIR_fileSize, dir[i].DIR_fileSize);
+			printf("File size: %d (0x%X) bytes\n", dir[index].DIR_fileSize, dir[index].DIR_fileSize);
 		}
 	}
 	else
 	{
 		printf("Error: File not found\n");
 	}
-	
-
-	if(DBG)
-	{
-		printf("DEBUG: handleStat() ending...\n");
-	}
 
 	return;
 
 } // handleStat()
 
-bool generateShortName( char * enteredName, char * outShortName, bool * outIsDirectory )
+bool generateShortName( char * enteredName, char * outShortName, bool * outIsDirectory, bool * outIsDot, bool * outIsDotDot )
 {
 	if(DBG)
 	{
@@ -1014,12 +1282,14 @@ bool generateShortName( char * enteredName, char * outShortName, bool * outIsDir
 	{
 		outShortName[0] = '.';
 		*outIsDirectory = true;
+		*outIsDot = true;
 	}
 	else if( enteredNameLength == 2 && enteredName[0] == '.' && enteredName[1] == '.')
 	{
 		outShortName[0] = '.';
 		outShortName[1] = '.';
 		*outIsDirectory = true;
+		*outIsDotDot = true;
 	}
 	else if( enteredNameLength >= 2 && enteredName[0] == '.' )
 	{
@@ -1115,12 +1385,80 @@ bool generateShortName( char * enteredName, char * outShortName, bool * outIsDir
 			printf("%c", outShortName[j]);
 		}
 		printf("'\n");
-		printf("DEBUG: generateShortName() ending...\n");
 	}
 
 	return true;
 
 } // generateShortName()
+
+bool findDirEntry(char * shortName, int * outIndex)
+{
+	if(DBG)
+	{
+		printf("DEBUG: starting findDirEntry()...\n");
+	}
+
+	// ensure the directories have been read before traversing through them
+	if(!currDirEntriesRead)
+	{
+		if( !readCurrDirEntries() && DBG )
+		{
+			printf("ERROR -> readCurrDirEntries() had a problem...\n");
+			return false;
+		}
+	}
+
+	// create a bool to check whether a matching entry was found
+	bool matchFound = false;
+
+	// loop through the global dir array to check for a match
+	int i;
+	for( i=0; i<numDirEntries; i++)
+	{
+		char rawLabel[12];
+		strncpy( rawLabel, dir[i].DIR_name, 11 );
+		rawLabel[11] = '\0';
+		if( strcmp(shortName, rawLabel) == 0 )
+		{
+			matchFound = true;
+			*outIndex = i;
+			break;
+		}
+	}
+	return matchFound;
+}
+
+/*uint32_t getFullCluster(struct DirectoryEntry dirEntry)
+{
+	if(DBG)
+	{
+		printf("DEBUG: getFullCluster() starting...\n");
+	}
+
+	char clusterStr[4];
+	uint32_t cluster;
+
+	// get all the cluster bytes individually
+	uint8_t firstByte = dirEntry.DIR_firstClusterHigh[1];
+	uint8_t secondByte = dirEntry.DIR_firstClusterHigh[0];
+	uint8_t thirdByte = dirEntry.DIR_firstClusterLow[1];
+	uint8_t fourthByte = dirEntry.DIR_firstClusterLow[0];
+
+	// store the 4 bytes in order from highest byte to lowest byte in a string
+	sprintf(clusterStr, "%hhu%hhu%hhu%hhu", firstByte, secondByte, thirdByte, fourthByte);
+
+	// convert the cluster string to a uint32_t
+	cluster = (uint32_t) strtol(clusterStr, NULL, 10);
+
+	if(DBG)
+	{
+		printf("sector: %X\n", cluster);
+		printf("sector offset: %X\n",LBAToOffset(cluster));
+		printf("DEBUG: getFullCluster() ending...\n");
+	}
+
+	return cluster;
+}*/
 
 void cleanUp()
 {

@@ -112,6 +112,9 @@ void handleCd( char * );
 void handleRead( char *, char *, char * );
 bool findDirEntry( char *, int * );
 //uint32_t getFullCluster( struct DirectoryEntry );
+void resetToRoot( void );
+void addSubDirToPrompt( char * );
+void removeSubDirFromPrompt( void );
 
 int main( int argc, char *argv[] )
 {
@@ -150,7 +153,7 @@ int main( int argc, char *argv[] )
 		}
 		else
 		{
-			printf("mfs:%s>", currentDir);
+			printf("mfs:\\%s\\>", currentDir);
 		}
 
 		// Read the command from the commandline.  The
@@ -416,8 +419,7 @@ void tryOpenImage ( char * imageToOpen )
 	}
 
 	// since the image was just opened, set the currentDir global to the root dir, along with the root sec #
-	currentDir = "root";
-	currentSector = bpb.BPB_RootClus;
+	resetToRoot();
 
 	// populate the global directory entry array with the contents of the root dir
 	if( !readCurrDirEntries() && DBG )
@@ -1089,8 +1091,7 @@ void handleCd( char * enteredDirName )
 			{
 				printf("    -: setting cwd to root...\n");
 			}
-			currentDir = "root";
-			currentSector = bpb.BPB_RootClus;
+			resetToRoot();
 			dirChanged = true;
 		}
 		else
@@ -1165,15 +1166,17 @@ void handleCd( char * enteredDirName )
 				printf("    -: handling dotdot..\n");
 			}
 
+			// var for the parent directory cluster
+			uint16_t parentDirCluster = dir[1].DIR_firstClusterLow;
+
 			// check if the parent dir is root first
-			if(dir[1].DIR_firstClusterLow == 0)
+			if(parentDirCluster == 0)
 			{
 				if(DBG)
 				{
 					printf("    -: dotdot leads to root, going there...\n");
 				}
-				currentDir = "root";
-				currentSector = bpb.BPB_RootClus;
+				resetToRoot();
 				dirChanged = true;
 			}
 			else
@@ -1183,6 +1186,13 @@ void handleCd( char * enteredDirName )
 				{
 					printf("    -: dotdot does not lead to root, calculating the parent dir..\n");
 				}
+
+				// update the global tracker
+				currentSector = parentDirCluster;
+
+				// since we're moving directories, update the breadcrumb prompt
+				removeSubDirFromPrompt();
+				
 
 				dirChanged = true;
 			}
@@ -1202,7 +1212,8 @@ void handleCd( char * enteredDirName )
 			}
 
 			currentSector = dir[dirIndex].DIR_firstClusterLow;
-			currentDir = enteredDirName;
+			//currentDir = enteredDirName;
+			addSubDirToPrompt(enteredDirName);
 			dirChanged = true;
 
 			if(DBG)
@@ -1551,6 +1562,122 @@ bool findDirEntry(char * shortName, int * outIndex)
 
 	return cluster;
 }*/
+
+void addSubDirToPrompt( char * textToAdd )
+{
+	if(DBG)
+	{
+		printf("DEBUG: addSubDirToPrompt() starting...\n");
+	}
+
+	// if we're in root, then it's simple to add a subdir to the prompt
+	if(currentDir == "root")
+	{
+		// invalidate the last pointer
+		currentDir = NULL;
+		
+		// allocate a new block of memory that's big enough to hold the subdir size
+		currentDir = (char *) calloc( strlen(textToAdd)+1, sizeof(char) );
+
+		// copy-in the subdir name
+		strcpy(currentDir, textToAdd);
+	}
+	else
+	{
+		// adding a nested subdir is more tricky
+		// we need to ensure memory is handled properly
+		int currentDirLength = strlen(currentDir);
+
+		// create a temp copy of the current directory, with a couple added bytes for trailing slash and null term
+		char copy[currentDirLength+2];
+		strncpy(copy, currentDir, currentDirLength);
+
+		// add the slash that will go at the end, along with the null term
+		copy[currentDirLength] = '\\';
+		copy[currentDirLength+1] = '\0';
+
+		// invalidate the last pointer, and allocate an appropriately-size new block of memory
+		currentDir = NULL;
+		currentDir = (char*) calloc( strlen(textToAdd)+currentDirLength+2, sizeof(char) );
+
+		// copy the old string into the new copy, then concatenate the new directory to that
+		strcpy(currentDir,copy);
+		strcat(currentDir,textToAdd);
+	}
+
+	if(DBG)
+	{
+		printf("DEBUG: addSubDirToPrompt() ending...\n");
+	}
+	return;
+}
+
+void removeSubDirFromPrompt()
+{
+	if(DBG)
+	{
+		printf("DEBUG: removeSubDirFromPrompt() starting...\n");
+	}
+
+	// we don't get here if the user is going back to root, so we don't need to worry about that
+
+	// get the snippet of the directory that will be removed
+	// the result ptr will be a ptr to the slash before the start of the current dir
+	char * lastSlashPtr;
+	lastSlashPtr = strrchr(currentDir,'\\');
+	
+	// check if there was a problem, and reset back to the root dir if so
+	if(lastSlashPtr == NULL)
+	{
+		if(DBG)
+		{
+			printf("    -: problem with strrchr(), NULL returned\n");
+		}
+		resetToRoot();
+		return;
+	}
+
+	if(DBG)
+	{
+		printf("    -: text to remove: %s\n",lastSlashPtr);
+	}
+	
+	// figure out how much needs to get removed
+	int textToRemoveLength = strlen(lastSlashPtr);
+	int currDirLength = strlen(currentDir);
+	int newCrumbLength = currDirLength-textToRemoveLength;
+
+	// create a temp copy of the current dir, +1 for the null term
+	char copy[currDirLength+1];
+	strcpy(copy,currentDir);
+
+	// invalidate the last pointer, and allocate an appropriately-size new block of memory
+	currentDir = NULL;
+	currentDir = (char*) calloc( newCrumbLength+1, sizeof(char) );
+
+	// copy-in chars from the copy, up to just the length needed
+	strncpy(currentDir, copy, newCrumbLength);
+
+	// add the null term
+	currentDir[newCrumbLength] = '\0';
+
+	if(DBG)
+	{
+		printf("DEBUG: removeSubDirFromPrompt() ending...\n");
+	}
+	return;
+}
+
+void resetToRoot()
+{
+	if(DBG)
+	{
+		printf("DEBUG: resetToRoot() called...\n");
+	}
+	currentDir = "root";
+	currentSector = bpb.BPB_RootClus;
+	return;
+}
 
 void cleanUp()
 {

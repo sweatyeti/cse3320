@@ -115,6 +115,7 @@ bool findDirEntry( char *, int * );
 void resetToRoot( void );
 void addSubDirToPrompt( char * );
 void removeSubDirFromPrompt( void );
+void handleGet( char * );
 
 int main( int argc, char *argv[] )
 {
@@ -267,7 +268,7 @@ int main( int argc, char *argv[] )
 
 		if( strcmp(command, "get") == 0)
 		{
-
+			handleGet(tokens[1]);
 			continue;
 		}
 
@@ -1097,11 +1098,22 @@ void handleCd( char * enteredDirName )
 		else
 		{
 			//handle other absolute moves
+
+			// can be something like:
+			// backup the currentSector & currentDir
+			// tokenize the input string based on slashes
+			// resetToRoot()
+			// check each token to see if it exists in the current directory context
+			// through each directory being moved, update the globals (update currentDir by calling addSubDirToPrompt)
+			// if a match is found, the globals should already be at the right values, so processing can stop
+			// if a match is not found, warn the user and restore the globals
 		}
 	}
 	else if( (strchr(enteredDirName,'\\') != NULL) || (strchr(enteredDirName,'/') != NULL) )
 	{
 		// user wants to move to a relative location that would take more than one step (ie cd ../name)
+		// similar to above, except not starting from root
+		// sounds like I can build the searching functionality into a separate function that both can use
 	}
 	else
 	{
@@ -1192,8 +1204,6 @@ void handleCd( char * enteredDirName )
 
 				// since we're moving directories, update the breadcrumb prompt
 				removeSubDirFromPrompt();
-				
-
 				dirChanged = true;
 			}
 
@@ -1203,23 +1213,24 @@ void handleCd( char * enteredDirName )
 			// moving to a subdirectory only
 			if(DBG)
 			{
-				printf("    -: moving to subdir %s (%s)..\n", enteredDirName, genShortName);
+				printf("    -: moving to subdir %s..\n", enteredDirName);
 			}
 			int dirIndex = 0;
 			if(!findDirEntry(genShortName, &dirIndex))
 			{
 				printf("Error: Path not found.\n");
 			}
-
-			currentSector = dir[dirIndex].DIR_firstClusterLow;
-			//currentDir = enteredDirName;
-			addSubDirToPrompt(enteredDirName);
-			dirChanged = true;
+			else
+			{
+				currentSector = dir[dirIndex].DIR_firstClusterLow;
+				addSubDirToPrompt(enteredDirName);
+				dirChanged = true;
+			}
 
 			if(DBG)
 			{
-				printf("    -: new sec = 0x%lX\n",currentSector);
-				printf("    -: new dir = '%s'\n", currentDir);				
+				printf("    -: current sec = 0x%lX\n",currentSector);
+				printf("    -: current dir = '%s'\n", currentDir);				
 			}
 		}
 	}
@@ -1346,6 +1357,91 @@ void handleStat( char * enteredEntryName )
 	return;
 
 } // handleStat()
+
+void handleGet( char * fileToGet )
+{
+	if(DBG)
+	{
+		printf("DEBUG: handleGet() starting...\n");
+	}
+	// make the de facto check to ensure an image has been opened, warn and bail if not
+	if( !imgAlreadyOpened() ) 
+	{
+		printf("Error: File system image must be opened first.\n");
+		return;
+	}
+
+	// ensure the user entered a file name
+	if( fileToGet == NULL )
+	{
+		printf("Please enter a file name.\n");
+		return;
+	}
+
+	// first we need to convert the entered entry name into the short name stored in the image
+	char enteredShortName[12];
+	
+	// generateShortName returns true if it was able to generate a legit short name
+	// if it failed, then warn and bail
+	bool isDirectory = false;
+	bool isDot = false;
+	bool isDotDot = false;
+	if(!generateShortName(fileToGet, enteredShortName, &isDirectory, &isDot, & isDotDot))
+	{
+		printf("Error: File not found\n");
+		return;
+	}
+	enteredShortName[11] = '\0';
+
+	// can't get a directory, warn and bail if that's what the user tried
+	if(isDirectory)
+	{
+		printf("Please enter a valid get command, such as 'get foo.txt'\n");
+		if(DBG)
+		{
+			printf("    -: can't get a directory\n");
+		}
+		return;
+	}
+
+	// ensure the current dir entries have been read
+	if(!currDirEntriesRead)
+	{
+		if( !readCurrDirEntries() && DBG )
+		{
+			printf("ERROR -> readCurrDirEntries() had a problem...\n");
+			return;
+		}
+	}
+
+	int index = 0;
+	if(findDirEntry(enteredShortName, &index))
+	{
+		// make doubly sure we're not trying to read from a directory
+		if((dir[index].DIR_attr | 0x10) == 0x10)
+		{
+			printf("Please enter a valid get command, such as 'get foo.txt'\n");
+			if(DBG)
+			{
+				printf("    -: can't get a directory\n");
+			}
+			return;
+		}
+
+		// do the GET stuff here
+	}
+	else
+	{
+		printf("Error: File not found.\n");
+	}
+
+
+	if(DBG)
+	{
+		printf("DEBUG: handleGet() ending...\n");
+	}
+
+}
 
 bool generateShortName( char * enteredName, char * outShortName, bool * outIsDirectory, bool * outIsDot, bool * outIsDotDot )
 {
@@ -1526,6 +1622,14 @@ bool findDirEntry(char * shortName, int * outIndex)
 	}
 	if(DBG)
 	{
+		if(matchFound)
+		{
+			printf("    -: match found\n");
+		}
+		else
+		{
+			printf("    -: match not found\n");
+		}
 		printf("DEBUG: ending findDirEntry()...\n");
 	}
 	return matchFound;

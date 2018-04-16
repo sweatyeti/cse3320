@@ -100,7 +100,7 @@ void setCurrentDir( char * );
 void handleLS( void );
 bool readCurrDirEntries( uint16_t * );
 void handleStat( char * );
-char * generateShortName( char * );
+bool generateShortName( char *, char *);
 
 int main( int argc, char *argv[] )
 {
@@ -863,9 +863,15 @@ void handleStat( char * enteredEntryName )
 	}
 
 	// first we need to convert the entered entry name into the short name stored in the image
-	// allocate some space (max 11 chars) to store the returned short name
-	char * enteredShortName;
-	enteredShortName = generateShortName(enteredEntryName);
+	//char * enteredShortName;
+	//enteredShortName = generateShortName(enteredEntryName);
+
+	char shortName[11];
+	
+	if(!generateShortName(enteredEntryName, shortName))
+	{
+		printf("Error: File not found\n");
+	}
 
 	//printf("    -: entered short name: %s\n", &enteredShortName);
 
@@ -878,15 +884,15 @@ void handleStat( char * enteredEntryName )
 
 } // handleStat()
 
-char * generateShortName( char * enteredName )
+bool generateShortName( char * enteredName, char * outShortName )
 {
 	if(DBG)
 	{
 		printf("DEBUG: generateShortName() starting...\n");
 	}
 
-	// create array of chars and fill it with spaces
-	char outShortName[11];
+	// create array of chars and fill it with spaces 
+	//char outShortName[11];
 	int k;
 	for( k=0; k<11; k++)
 	{
@@ -895,8 +901,17 @@ char * generateShortName( char * enteredName )
 
 	int enteredNameLength = strlen(enteredName);
 
-	printf("entered name length: %d\n", enteredNameLength);
-	printf("entered name: %s\n", enteredName);
+	// since we're only doing short name checking, the file/dir name cannot be longer than
+	// 11 characters + 1 dot. If the user entered more than 12 characters, return false
+	// later-on we check to ensure the name is valid or not, since some 12char labels can be wrong
+	if(enteredNameLength > 12)
+	{
+		if(DBG)
+		{
+			printf("     : invalid entry name entered (too long)..\n");
+		}
+		return false;
+	}
 
 	if(enteredNameLength == 1 && enteredName[0] == '.')
 	{
@@ -907,6 +922,15 @@ char * generateShortName( char * enteredName )
 		outShortName[0] = '.';
 		outShortName[1] = '.';
 	}
+	else if( enteredNameLength >= 2 && enteredName[0] == '.' )
+	{
+		// this is an invalid name per the FAT spec (DIR_Name[0] would be 0x20), return false
+		if(DBG)
+		{
+			printf("     : invalid entry name entered (DIR_Name[0] would be 0x20)\n");
+		}
+		return false;
+	}
 	else
 	{
 		// convert the entered characters to uppercase
@@ -914,9 +938,7 @@ char * generateShortName( char * enteredName )
 		for( i=0; i<enteredNameLength; i++)
 		{
 			enteredName[i] = toupper(enteredName[i]);
-			printf("%c",enteredName[i]);
 		}
-		printf("\n");
 
 		// prep for strcpsn() call
 		int dotPosition;
@@ -929,21 +951,71 @@ char * generateShortName( char * enteredName )
 		// if no dot was found, then they're looking for a directory
 		if( dotPosition == enteredNameLength )
 		{
-
+			if(enteredNameLength > 11)
+			{
+				// there's no dot/extension, so the max allowed name length is 11
+				if(DBG)
+				{
+					printf("     : invalid entry name entered (too long)\n");
+				}
+				return false;
+			}
+			// copy just the entered (and capitalized) name letters to be returned
+			strncpy( outShortName, enteredName, enteredNameLength );
+		}
+		else if( dotPosition > 8 )
+		{
+			// per the FAT spec, the entry name is max 8-char label + max 3-char extension
+			// so the dot's furthest position can be index 8
+			// if the dot is past this (index>8), then it's an invalid request, return false
+			if(DBG)
+			{
+				printf("     : invalid entry name entered (filename > 8 chars)\n");
+			}
+			return false;
 		}
 		else
 		{
+			// if the dot was at position X, then there are X characters before it, copy those
+			// chars into the out string
+			strncpy( outShortName, enteredName, dotPosition );
 
+			int enteredExtnLength = strlen( &enteredName[dotPosition+1] );
+
+			if(enteredExtnLength > 3)
+			{
+				// invalid file name entered (extension can only be max 3 chars), return false
+				if(DBG)
+				{
+					printf("     : invald entry extension entered (extn > 3 chars)\n");
+				}
+				return false;
+			}
+
+			// according to the FAT spec, "foo." resolves to the "FOO" short name
+			// so, only copy additional characters is there is something after the dot
+			if(enteredExtnLength > 0)
+			{
+				strncpy( &outShortName[8], &enteredName[dotPosition+1], enteredExtnLength );
+			}
 		}
-
 	}
 
 	if(DBG)
 	{
+		printf("     : generated short name: '");
+		int j;
+		for( j=0; j<11; j++)
+		{
+			printf("%c", outShortName[j]);
+		}
+		printf("'\n");
 		printf("DEBUG: generateShortName() ending...\n");
 	}
 
-}
+	return true;
+
+} // generateShortName()
 
 void cleanUp()
 {

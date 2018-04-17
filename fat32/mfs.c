@@ -116,8 +116,9 @@ void resetToRoot( void );
 void addSubDirToPrompt( char * );
 void removeSubDirFromPrompt( void );
 void handleGet( char * );
-bool multistepDirChg( bool, char * );
+bool tryMultistepDirChg( bool, char * );
 bool tryMoveOneDir( char * );
+bool tryCopyFileFromImageToCwd( int, char * );
 
 int main( int argc, char *argv[] )
 {
@@ -376,7 +377,7 @@ bool readImageMetadata()
 	}
 	// if we got here, then all is good
 	return true;
-}
+} // readImageMetadata()
 
 bool validateOpenCmd( char * requestedFilename )
 {
@@ -396,7 +397,7 @@ bool validateOpenCmd( char * requestedFilename )
 
 	// basic checks pass, we're good
 	return true;
-}
+} // validateOpenCmd()
 
 void tryOpenImage ( char * imageToOpen )
 {
@@ -448,7 +449,7 @@ void tryOpenImage ( char * imageToOpen )
 	}
 
 	return;
-}
+} // tryOpenImage()
 
 void tryCloseImage()
 {
@@ -891,7 +892,8 @@ void handleRead( char * fileToBeRead, char * filePosStr, char * numBytesStr)
 
 		if(DBG)
 		{
-			printf("    -: new filePos: 0x%lX (0n%ld)\n", filePos, filePos);
+			printf("     : new filePos: 0x%lX (0n%ld)\n", filePos, filePos);
+			printf("     : seeking to and reading the file...\n");
 		}
 
 		// goto the location in the file
@@ -911,6 +913,10 @@ void handleRead( char * fileToBeRead, char * filePosStr, char * numBytesStr)
 		//{
 			fread( chars, 1, numBytes, fp );
 		//}
+		if(DBG)
+		{
+			printf("     : file read finished\n");
+		}
 
 		printf("%s\n", chars);
 
@@ -920,6 +926,11 @@ void handleRead( char * fileToBeRead, char * filePosStr, char * numBytesStr)
 	else
 	{
 		printf("Error: File not found\n");
+	}
+
+	if(DBG)
+	{
+		printf("DEBUG: handleRead() ending...\n");
 	}
 
 } // handleRead()
@@ -1105,14 +1116,14 @@ void handleCd( char * enteredDirName )
 		else
 		{
 			//handle other root-relative (absolute) moves
-			cdSuccessful = multistepDirChg(true, enteredDirName);
+			cdSuccessful = tryMultistepDirChg(true, enteredDirName);
 
 		}
 	}
 	else if( (strchr(enteredDirName,'\\') != NULL) || (strchr(enteredDirName,'/') != NULL) )
 	{
 		// user wants to move to a relative location that would take more than one step (ie cd ../name)
-		cdSuccessful = multistepDirChg(false, enteredDirName);
+		cdSuccessful = tryMultistepDirChg(false, enteredDirName);
 	}
 	else
 	{
@@ -1387,11 +1398,11 @@ bool tryMoveOneDir( char * enteredDirName )
 	return dirChanged;
 }
 
-bool multistepDirChg( bool relativeToRoot, char * requestedDir )
+bool tryMultistepDirChg( bool relativeToRoot, char * requestedDir )
 {
 	if(DBG)
 	{
-		printf("DEBUG: multistepDirChg() starting...\n");
+		printf("DEBUG: tryMultistepDirChg() starting...\n");
 	}
 
 	// backup current sector and dir in case any of the steps fail
@@ -1490,7 +1501,7 @@ bool multistepDirChg( bool relativeToRoot, char * requestedDir )
 
 	if(DBG)
 	{
-		printf("DEBUG: multistepDirChg() ending...\n");
+		printf("DEBUG: tryMultistepDirChg() ending...\n");
 	}
 
 	return allStepsSuccessful;
@@ -1537,7 +1548,7 @@ void handleGet( char * fileToGet )
 		printf("Please enter a valid get command, such as 'get foo.txt'\n");
 		if(DBG)
 		{
-			printf("    -: can't get a directory\n");
+			printf("     : can't get a directory\n");
 		}
 		return;
 	}
@@ -1561,12 +1572,24 @@ void handleGet( char * fileToGet )
 			printf("Please enter a valid get command, such as 'get foo.txt'\n");
 			if(DBG)
 			{
-				printf("    -: can't get a directory\n");
+				printf("     : can't get a directory\n");
 			}
 			return;
 		}
 
-		// do the GET stuff here
+		if( !tryCopyFileFromImageToCwd(index,fileToGet) )
+		{
+			printf("There was a problem getting the file. Please try again.\n");
+			if(DBG)
+			{
+				printf("ERROR -> tryCopyFileFromImageToCwd() returned false\n");
+			}
+		}
+		else
+		{
+			printf("File '%s' retrieved and placed in current working directory.\n", fileToGet);
+		}
+		
 	}
 	else
 	{
@@ -1579,7 +1602,219 @@ void handleGet( char * fileToGet )
 		printf("DEBUG: handleGet() ending...\n");
 	}
 
-}
+} // handleGet()
+
+bool tryCopyFileFromImageToCwd( int entryIndex, char * fileName )
+{
+	if(DBG)
+	{
+		printf("DEBUG: tryCopyFileFromImageToCwd() starting...\n");
+	}
+
+	// create a flag that gets returned so the caller can determine success
+	bool fileSaveSuccessful = false;
+
+	// grab and store the current working directory, will need to free(cwdBuf) later
+	char * cwdBuf = NULL;
+	cwdBuf = getcwd(NULL, 0);
+
+	// build the entire file path, which gets sent to fopen later
+	char outFilePathAndName[ strlen(cwdBuf) + strlen(fileName) +2 ];
+	strcpy(outFilePathAndName,cwdBuf);
+	strcat(outFilePathAndName,"/");
+	strcat(outFilePathAndName,fileName);
+
+	if(DBG)
+	{
+		printf("     : cwd = %s\n", cwdBuf);
+		printf("     : full file path will be: %s\n", outFilePathAndName);
+	}
+
+	// backup the current sector so it can be restored after the read
+	uint64_t currentSectorBackup = currentSector;
+
+	// move the sector indicator to the first block of the file, and calculate that address
+	currentSector = dir[entryIndex].DIR_firstClusterLow;
+	uint32_t fileOffset = LBAToOffset(currentSector);
+
+	// store the size of the file
+	uint32_t fileSize = dir[entryIndex].DIR_fileSize;
+
+	if(DBG)
+	{
+		printf("     : file starts at sector %hd, address 0x%X, going there..\n", currentSector, fileOffset);
+	}
+
+	// goto the file location
+	fseek(fp, fileOffset, SEEK_SET);
+
+	// initialize the output file stream
+	FILE * outFile;
+	outFile = fopen(outFilePathAndName, "w+");
+
+	uint8_t * outBytes;
+
+	// if the fileSize < num bytes per sector, then we don't need to do anything special wrt moving to diff clusters
+	// so, read the file in one fell swoop
+	if(fileSize <= bpb.BPB_BytesPerSec)
+	{
+		outBytes = (uint8_t*) calloc( fileSize, sizeof(uint8_t) );
+		if( fread(outBytes, sizeof(uint8_t), fileSize, fp ) != fileSize )
+		{
+			// fread had a problem
+			if(DBG)
+			{
+				printf("ERROR -> tryCopyFileFromImageToCwd(): single cluster fread failed\n");
+			}
+		}
+		else if( fwrite(outBytes, sizeof(uint8_t), fileSize, outFile) != fileSize )
+		{
+			// fwrite had a problem
+			if(DBG)
+			{
+				printf("ERROR -> tryCopyFileFromImageToCwd(): single cluster fwrite failed\n");
+			}
+		}
+		else
+		{
+			// we only get here if both fread and fwrite were successful
+			fileSaveSuccessful = true;
+			if(DBG)
+			{
+				printf("     : single cluster read and write successful\n");
+			}
+		}
+	}
+	else
+	{
+		// the file will span multiple clusters, so read in chunks of BPB_BytesPerSec bytes at a time, 
+		// until the last block, then just read what's left
+		uint16_t amountToWrite = bpb.BPB_BytesPerSec;
+
+		uint32_t numBytesToBeRead = fileSize;
+
+		if(DBG)
+		{
+			printf("     : the file to get is %d bytes\n", fileSize);
+		}
+
+		int loopCount = 0;
+		uint32_t amountWritten = 0;
+		while(true)
+		{
+			// clear and allocate memory for the array that holds the bytes to be xferred
+			outBytes = NULL;
+			outBytes = (uint8_t*) calloc(amountToWrite, sizeof(uint8_t));
+
+			if( fread( outBytes, sizeof(uint8_t), amountToWrite, fp) != amountToWrite )
+			{
+				// fread had a problem
+				if(DBG)
+				{
+					printf("ERROR -> tryCopyFileFromImageToCwd(): multi-cluster fread failed in loop %d\n", loopCount);
+				}
+			}
+			else if( fwrite( outBytes, sizeof(uint8_t), amountToWrite, outFile) != amountToWrite )
+			{
+				// fwrite had a problem
+				if(DBG)
+				{
+					printf("ERROR -> tryCopyFileFromImageToCwd(): multi-cluster fwrite failed in loop %d\n", loopCount);
+				}
+			}
+			else
+			{
+				// we only get here if both fread and fwrite were successful
+				if(DBG)
+				{
+					printf("     : multi-cluster read/write for loop #%d successful\n", loopCount);
+				}
+
+				amountWritten += amountToWrite;
+				numBytesToBeRead -= amountToWrite;
+
+				if(DBG)
+				{
+					printf("     : num bytes written: %d\n", amountWritten);
+				}
+
+				// calculate next loop iteration details
+				currentSector = nextLB(currentSector);
+
+				// if the last block has already been read, then we're finished, break the loop
+				if(currentSector == -1)
+				{
+					if(DBG)
+					{
+						printf("     : multi-cluster read/write finished, loop exiting...\n");
+					}
+
+					if(amountWritten != fileSize)
+					{
+						if(DBG)
+						{
+							printf("ERROR -> tryCopyFileFromImageToCwd(): fileSize (%d) & amountWritten (%d) don't match\n",fileSize, amountWritten);
+							printf("      -> the difference (amountWritten-fileSize): %d\n", amountWritten-fileSize);
+						}
+					}
+					else
+					{
+						fileSaveSuccessful = true;
+					}
+					break;
+				}
+
+				// get the new block's offset and go there
+				fileOffset = LBAToOffset(currentSector);
+				fseek(fp, fileOffset, SEEK_SET);
+				
+				if(DBG)
+				{
+					printf("     : next sector: %lX @ address 0x%X\n", currentSector, fileOffset);
+				}
+
+				// figure out if we need to read the entire block, or just part of it
+				if( numBytesToBeRead <= bpb.BPB_BytesPerSec )
+				{
+					// if we don't need to read the whole block, then set the amountToWrite to what's left
+					amountToWrite = numBytesToBeRead;
+				}
+				if(DBG)
+				{
+					printf("     : numBytesToBeRead=%d, next amountToWrite=%hd\n", numBytesToBeRead, amountToWrite);
+				}
+			}
+			loopCount++;
+		}
+
+	}
+
+	// close the output file
+	fclose(outFile);
+
+	// restore the original current sector
+	currentSector = currentSectorBackup;
+	free(cwdBuf);
+
+	if(!fileSaveSuccessful)
+	{
+		// a file always gets created, so delete it if any failure occurred during the read/write process
+		if( remove(outFilePathAndName) != 0 )
+		{
+			if(DBG)
+			{
+				printf("ERROR -> tryCopyFileFromImageToCwd(): failure to delete created file after failed read/write attempt\n");
+			}
+		}
+	}
+
+	if(DBG)
+	{
+		printf("DEBUG: tryCopyFileFromImageToCwd() ending...\n");
+	}
+
+	return fileSaveSuccessful;
+} // tryCopyFileFromImageToCwd()
 
 bool generateShortName( char * enteredName, char * outShortName, bool * outIsDirectory, bool * outIsDot, bool * outIsDotDot )
 {
@@ -1728,7 +1963,7 @@ bool findDirEntry(char * shortName, int * outIndex)
 {
 	if(DBG)
 	{
-		printf("DEBUG: starting findDirEntry()...\n");
+		printf("DEBUG: findDirEntry() starting...\n");
 	}
 
 	// ensure the directories have been read before traversing through them
@@ -1768,7 +2003,7 @@ bool findDirEntry(char * shortName, int * outIndex)
 		{
 			printf("    -: match not found\n");
 		}
-		printf("DEBUG: ending findDirEntry()...\n");
+		printf("DEBUG: findDirEntry() ending...\n");
 	}
 	return matchFound;
 }

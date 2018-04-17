@@ -116,6 +116,8 @@ void resetToRoot( void );
 void addSubDirToPrompt( char * );
 void removeSubDirFromPrompt( void );
 void handleGet( char * );
+bool multistepDirChg( bool, char * );
+bool tryMoveOneDir( char * );
 
 int main( int argc, char *argv[] )
 {
@@ -148,7 +150,7 @@ int main( int argc, char *argv[] )
 		{
 			printf ("mfs> ");
 		}
-		else if( currentDir == "root" )
+		else if( strcmp(currentDir,"root") == 0 )
 		{
 			printf("mfs:\\> ");
 		}
@@ -293,6 +295,22 @@ int main( int argc, char *argv[] )
 		if( strcmp(command, "volume") == 0)
 		{
 			printVolumeName();
+			continue;
+		}
+
+		if( strcmp(command, "dbg") == 0)
+		{
+			// enable or disable dbg output via the program itself
+			DBG = !DBG;
+			printf("Debug output ");
+			if(DBG)
+			{
+				printf("enabled\n");
+			}
+			else
+			{
+				printf("disabled\n");
+			}
 			continue;
 		}
 	}// main loop
@@ -585,7 +603,7 @@ bool readCurrDirEntries()
 	{
 		if(DBG)
 		{
-			printf("    -: reading directory entry index #%d..\n", numDirEntriesRead);
+			printf("    -: reading directory entry index #%d: ", numDirEntriesRead);
 		}
 
 		// read one entry and increment the counter
@@ -597,10 +615,9 @@ bool readCurrDirEntries()
 			char rawLabel[12];
 			strncpy( rawLabel, dir[numDirEntriesRead].DIR_name, 11 );
 			rawLabel[11] = '\0';
-			printf("    -: raw label: %s, ", rawLabel);
+			printf("raw label: %s, ", rawLabel);
 			printf("1st label byte: 0x%hhX, ", rawLabel[0]);
 			printf("attr: 0x%hhX\n", dir[numDirEntriesRead].DIR_attr);
-			printf("    -: directory entry index %hhu read..\n", numDirEntriesRead);
 		}
 
 		numDirEntriesRead++;
@@ -664,11 +681,6 @@ bool readCurrDirEntries()
 		}
 		else
 		{
-			if(DBG)
-			{
-				printf("    -: checking next possible dir entry..\n");
-			}
-
 			// store the current position of the stream so it can be restored
 			fpos_t streamPosition;
 			fgetpos(fp, &streamPosition);
@@ -685,16 +697,12 @@ bool readCurrDirEntries()
 			{
 				if(DBG)
 				{
-					printf("    -: no more directory entries, exiting loop..\n");
+					printf("     : no more entries, exiting loop..\n");
 				}
 				break;
 			}
 			else
 			{
-				if(DBG)
-				{
-					printf("    -: next entry exists, continuing loop..\n");
-				}
 				continue;
 			}
 		}
@@ -1077,9 +1085,8 @@ void handleCd( char * enteredDirName )
 	}
 
 	// create a flag to indicate if the directory has been changed
-	bool dirChanged = false;
+	bool cdSuccessful = false;
 
-	// TODO: handle '/' and other absolute locations, along with relative locations
 	int enteredDirNameLength = strlen(enteredDirName);
 
 	// check if the user wants to move to an absolute or relative location
@@ -1093,146 +1100,24 @@ void handleCd( char * enteredDirName )
 				printf("    -: setting cwd to root...\n");
 			}
 			resetToRoot();
-			dirChanged = true;
+			cdSuccessful = true;
 		}
 		else
 		{
-			//handle other absolute moves
+			//handle other root-relative (absolute) moves
+			cdSuccessful = multistepDirChg(true, enteredDirName);
 
-			// can be something like:
-			// backup the currentSector & currentDir
-			// tokenize the input string based on slashes
-			// resetToRoot()
-			// check each token to see if it exists in the current directory context
-			// through each directory being moved, update the globals (update currentDir by calling addSubDirToPrompt)
-			// if a match is found, the globals should already be at the right values, so processing can stop
-			// if a match is not found, warn the user and restore the globals
 		}
 	}
 	else if( (strchr(enteredDirName,'\\') != NULL) || (strchr(enteredDirName,'/') != NULL) )
 	{
 		// user wants to move to a relative location that would take more than one step (ie cd ../name)
-		// similar to above, except not starting from root
-		// sounds like I can build the searching functionality into a separate function that both can use
+		cdSuccessful = multistepDirChg(false, enteredDirName);
 	}
 	else
 	{
 		// user wants to move to a relative location in one step (ie cd . or cd foldera)
-		char genShortName[12];
-		genShortName[11] = '\0';
-	
-		// generateShortName returns true if it was able to generate a legit short name
-		// if it failed, then warn and bail
-		bool isDirectory = false;
-		bool isDot = false;
-		bool isDotDot = false;
-		if(!generateShortName(enteredDirName, genShortName, &isDirectory, &isDot, &isDotDot))
-		{
-			if(DBG)
-			{
-				printf("    -: generateShortName() returned false\n");
-			}
-			printf("Error: Please enter a valid directory name.\n");
-			return;
-		}
-		// if a short name could be generated, check if the entered entry is a directory name, 
-		// warn and bail if not
-		else if(!isDirectory)
-		{
-			if(DBG)
-			{
-				printf("    -: generateShortName() indicated the chosen entry is not a directory\n");
-			}
-			printf("Error: Please enter a valid directory name.\n");
-			return;
-		}
-
-		// check to ensure the user hasn't selected . or .. if in the root dir, warn and bail if so
-		if(currentSector == bpb.BPB_RootClus && ( isDot || isDotDot ) )
-		{
-			if(DBG)
-			{
-				printf("    -: cannot do dot or dotdot in root\n");
-			}
-			printf("Error: Please enter a valid directory name.\n");
-			return;
-		}
-
-		// check for . and .. entries first, since they will be the first 2 records of a non-root directory
-		if(isDot)
-		{
-			// dot is the first entry of a non-root directory
-			if(DBG)
-			{
-				printf("    -: handling dot..\n");
-			}
-
-			// do nothing here since dot points to the current directory
-
-		}
-		else if(isDotDot)
-		{
-			// dotdot is the second entry of a non-root directory
-			if(DBG)
-			{
-				printf("    -: handling dotdot..\n");
-			}
-
-			// var for the parent directory cluster
-			uint16_t parentDirCluster = dir[1].DIR_firstClusterLow;
-
-			// check if the parent dir is root first
-			if(parentDirCluster == 0)
-			{
-				if(DBG)
-				{
-					printf("    -: dotdot leads to root, going there...\n");
-				}
-				resetToRoot();
-				dirChanged = true;
-			}
-			else
-			{
-				// at this point, we're not in a subdirectory of the root, so move upwards one level
-				if(DBG)
-				{
-					printf("    -: dotdot does not lead to root, calculating the parent dir..\n");
-				}
-
-				// update the global tracker
-				currentSector = parentDirCluster;
-
-				// since we're moving directories, update the breadcrumb prompt
-				removeSubDirFromPrompt();
-				dirChanged = true;
-			}
-
-		}
-		else
-		{
-			// moving to a subdirectory only
-			if(DBG)
-			{
-				printf("    -: moving to subdir %s..\n", enteredDirName);
-			}
-			int dirIndex = 0;
-			if(!findDirEntry(genShortName, &dirIndex))
-			{
-				printf("Error: Path not found.\n");
-			}
-			else
-			{
-				currentSector = dir[dirIndex].DIR_firstClusterLow;
-				addSubDirToPrompt(enteredDirName);
-				dirChanged = true;
-			}
-
-			if(DBG)
-			{
-				printf("    -: current sec = 0x%lX\n",currentSector);
-				printf("    -: current dir = '%s'\n", currentDir);				
-			}
-		}
+		cdSuccessful = tryMoveOneDir(enteredDirName);
 	}
 
 	if(DBG)
@@ -1242,7 +1127,7 @@ void handleCd( char * enteredDirName )
 
 	// if we changed directories, then update the global flag to indicate to the next function that
 	// the current directory for them has not been read yet
-	if(dirChanged)
+	if(cdSuccessful)
 	{
 		currDirEntriesRead = false;
 	}
@@ -1357,6 +1242,259 @@ void handleStat( char * enteredEntryName )
 	return;
 
 } // handleStat()
+
+bool tryMoveOneDir( char * enteredDirName )
+{
+	if(DBG)
+	{
+		printf("DEBUG: tryMoveOneDir() starting...\n");
+	}
+
+	bool dirChanged = false;
+
+	char genShortName[12];
+	genShortName[11] = '\0';
+
+	// generateShortName returns true if it was able to generate a legit short name
+	// if it failed, then warn and bail
+	bool isDirectory = false;
+	bool isDot = false;
+	bool isDotDot = false;
+	if(!generateShortName(enteredDirName, genShortName, &isDirectory, &isDot, &isDotDot))
+	{
+		if(DBG)
+		{
+			printf("    -: generateShortName() returned false\n");
+		}
+		printf("Error: Please enter a valid directory name.\n");
+		return false;
+	}
+	// if a short name could be generated, check if the entered entry is a directory name, 
+	// warn and bail if not
+	else if(!isDirectory)
+	{
+		if(DBG)
+		{
+			printf("    -: generateShortName() indicated the chosen entry is not a directory\n");
+		}
+		printf("Error: Please enter a valid directory name.\n");
+		return false;
+	}
+
+	// check to ensure the user hasn't selected . or .. if in the root dir, warn and bail if so
+	if(currentSector == bpb.BPB_RootClus && ( isDot || isDotDot ) )
+	{
+		if(DBG)
+		{
+			printf("    -: cannot do dot or dotdot in root\n");
+		}
+		printf("Error: Please enter a valid directory name.\n");
+		return false;
+	}
+
+	// ensure the directories have been read before traversing through them
+	if(!currDirEntriesRead)
+	{
+		if( !readCurrDirEntries() && DBG )
+		{
+			printf("ERROR -> readCurrDirEntries() had a problem...\n");
+			return false;
+		}
+	}
+
+	// check for . and .. entries first, since they will be the first 2 records of a non-root directory
+	if(isDot)
+	{
+		// dot is the first entry of a non-root directory
+		if(DBG)
+		{
+			printf("    -: handling dot..\n");
+		}
+
+		// doing this is not optimal, but is needed for the sake of time to avoid adding way more work in other areas
+		dirChanged = true;
+
+	}
+	else if(isDotDot)
+	{
+		// dotdot is the second entry of a non-root directory
+		if(DBG)
+		{
+			printf("    -: handling dotdot..\n");
+		}
+
+		// var for the parent directory cluster
+		uint16_t parentDirCluster = dir[1].DIR_firstClusterLow;
+
+		// check if the parent dir is root first
+		if(parentDirCluster == 0)
+		{
+			if(DBG)
+			{
+				printf("    -: dotdot leads to root, going there...\n");
+			}
+			resetToRoot();
+			dirChanged = true;
+		}
+		else
+		{
+			// at this point, we're not in a subdirectory of the root, so move upwards one level
+			if(DBG)
+			{
+				printf("    -: dotdot does not lead to root, calculating the parent dir..\n");
+			}
+
+			// update the global tracker
+			currentSector = parentDirCluster;
+
+			// since we're moving directories, update the breadcrumb prompt
+			removeSubDirFromPrompt();
+			dirChanged = true;
+		}
+
+	}
+	else
+	{
+		// moving to a subdirectory only
+		if(DBG)
+		{
+			printf("    -: checking if subdir '%s' exists..\n", enteredDirName);
+		}
+		int dirIndex = 0;
+		if(!findDirEntry(genShortName, &dirIndex))
+		{
+			printf("Error: Path not found.\n");
+		}
+		else
+		{
+			currentSector = dir[dirIndex].DIR_firstClusterLow;
+			addSubDirToPrompt(enteredDirName);
+			dirChanged = true;
+		}
+
+		if(DBG)
+		{
+			printf("    -: current sec = 0x%lX\n",currentSector);
+			printf("    -: current dir = '%s'\n", currentDir);				
+		}
+	}
+
+	if(DBG)
+	{
+		printf("DEBUG: tryMoveOneDir() ending...\n");
+	}
+
+	return dirChanged;
+}
+
+bool multistepDirChg( bool relativeToRoot, char * requestedDir )
+{
+	if(DBG)
+	{
+		printf("DEBUG: multistepDirChg() starting...\n");
+	}
+
+	// backup current sector and dir in case any of the steps fail
+	char * currentDirBackup;
+	int currentSectorBackup = currentSector;
+	if(currentSector != bpb.BPB_RootClus)
+	{
+		currentDirBackup = (char*) calloc( strlen(currentDir)+1, sizeof(char));
+		strcpy(currentDirBackup, currentDir);
+	}
+
+	bool dirChanged = false;
+	bool allStepsSuccessful = true;
+
+	// the tokenizing logic further down strips-out any leading slashes
+	// since that is lost, the relativeToRoot param is set by the caller, which has the logic to determine this
+	if(relativeToRoot)
+	{
+		resetToRoot();
+		currDirEntriesRead = false;
+	}
+	
+	// split the string into tokens, checking if the supplied dir entry is valid along the way
+	char * entryToken;
+	entryToken = strtok(requestedDir,"/\\");
+	
+	if(DBG)
+	{
+		printf("     : tokenizing...\n");
+	}
+	while( entryToken != NULL )
+	{
+		if(DBG)
+		{
+			printf("    -: testing token '%s' \n", entryToken);
+		}
+
+		// check if we could move one directory in the appropriate context
+		if( tryMoveOneDir(entryToken) )
+		{
+			// the directory exists and we could move into it
+			if(DBG)
+			{
+				printf("    -: single move successful\n");
+			}
+			// since we moved currentDir somewhere else, update the global 
+			currDirEntriesRead = false;
+
+			// update the flag since we changed dirs at least once
+			dirChanged = true;
+
+			// grab the next token and continue
+			entryToken = strtok(NULL,"/\\");
+			continue;
+		}
+		else
+		{
+			// the directory move could not be performed
+			if(DBG)
+			{
+				printf("    -: single move failed\n");
+			}
+			// since at least one step failed, set the flag and break out
+			allStepsSuccessful = false;
+			break;
+		}		
+	}
+
+	if(DBG && allStepsSuccessful)
+	{
+		printf("    -: all steps successful\n");
+	}
+
+	// if we changed directories at least once, but overall the move failed, then restore the original location context
+	if(dirChanged && !allStepsSuccessful)
+	{
+		if(DBG)
+		{
+			printf("    -: restoring original sector and dir...\n");
+		}
+
+		if(currentSectorBackup == bpb.BPB_RootClus)
+		{
+			resetToRoot();
+		}
+		else
+		{
+			currentSector = currentSectorBackup;
+			currentDir = NULL;
+			currentDir = (char*) calloc( strlen(currentDirBackup)+1, sizeof(char) );
+			strcpy(currentDir, currentDirBackup);
+		}
+		
+		currDirEntriesRead = false;
+	}
+
+	if(DBG)
+	{
+		printf("DEBUG: multistepDirChg() ending...\n");
+	}
+
+	return allStepsSuccessful;
+}
 
 void handleGet( char * fileToGet )
 {

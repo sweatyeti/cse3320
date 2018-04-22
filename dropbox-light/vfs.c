@@ -35,6 +35,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
 
 // We want to split our command line up into tokens
@@ -70,7 +71,7 @@
 bool DBG = false;
 
 // create the virtual file system structure  
-unsigned char vfs[NUM_BLOCKS][BLOCK_SIZE];
+uint8_t vfs[NUM_BLOCKS][BLOCK_SIZE];
 
 // this array keeps track of the free blocks
 int freeBlocks[NUM_BLOCKS];
@@ -90,14 +91,22 @@ struct DirectoryEntry
   uint32_t size;
   bool isValid;
   uint8_t inodeBlockIndex;
+	time_t offsetTimeAdded;
 } __attribute__((__packed__));
 
-// define and init the main counter to keep track of the number of entries in the vfs
-uint8_t numDirEntries = 0;
+// define and init the global counter to keep track of the number of entries in the vfs
+uint8_t numValidDirEntries = 0;
+
+// create a pointer to the root directory
+uint8_t (* rootDir)[BLOCK_SIZE] = vfs; 
 
 // function declarations
+bool initVirtFS( void );
 void handleDf( void );
 void handleList( void );
+void handlePut ( char * );
+bool tryPutFile( char * );
+uint32_t getAmountOfFreeSpace( void );
 
 int main( int argc, char *argv[] )
 {
@@ -117,6 +126,16 @@ int main( int argc, char *argv[] )
 	if(DBG)
 	{
 		printf("DEBUG: main() starting (after getopt)...\n");
+	}
+
+	if(!initVirtFS())
+	{
+		printf("There was a problem, and the program must exit. Please try again.\n");
+		if(DBG)
+		{
+			printf("ERROR -> main(): initVirtFS() returned FALSE\n");
+		}
+		exit(EXIT_FAILURE);
 	}
 
 	// allocate memory to hold the string entered by the user in the mfs shell
@@ -212,7 +231,7 @@ int main( int argc, char *argv[] )
 
     if( strcmp(command, "put") == 0)
 		{
-			//handlePut(tokens[1]);
+			handlePut(tokens[1]);
 			continue;
 		}
 
@@ -260,6 +279,98 @@ int main( int argc, char *argv[] )
 
 } // main
 
+bool initVirtFS()
+{
+	if(DBG)
+	{
+		printf("DEBUG: initVirtFS() starting...\n");
+	}
+
+
+
+	if(DBG)
+	{
+		printf("DEBUG: initVirtFS() exiting...\n");
+	}
+	return true;
+} // initVirtFS()
+
+void handlePut( char * fileToAdd )
+{
+	if(DBG)
+	{
+		printf("DEBUG: handlePut() starting...\n");
+	}
+
+	if(fileToAdd == NULL || (strlen(fileToAdd) == 0) )
+	{
+		printf("put error: Please enter a file name to put - ex. 'put foobar.txt'\n");
+		return;
+	}
+
+	if( strlen(fileToAdd) > MAX_FILENAME_LENGTH )
+	{
+		printf("put error: File name too long.\n");
+		return;
+	}
+
+	if( numValidDirEntries >= MAX_NUM_FILES )
+	{
+		printf("put error: the max number of files (%d) has been reached. ", MAX_NUM_FILES);
+		printf("Please remove a file before attempting to PUT another.\n");
+		return;
+	}
+
+	// grab and store the current working directory, will need to free(cwdBuf) later
+	char * cwdBuf = NULL;
+	cwdBuf = getcwd(NULL, 0);
+
+	// build the entire file path, which gets sent to fopen later
+	char physicalFileToGet[ strlen(cwdBuf) + strlen(fileToAdd) +2 ];
+	strcpy(physicalFileToGet,cwdBuf);
+	strcat(physicalFileToGet,"/");
+	strcat(physicalFileToGet,fileToAdd);
+	free(cwdBuf);
+
+	if(DBG)
+	{
+		printf("     : file to get: '%s'\n", physicalFileToGet);
+	}
+
+	struct stat fileStats;
+	errno = 0;
+	if( stat(physicalFileToGet, &fileStats) != 0 )
+	{
+		printf("put error: %s\n", strerror(errno) );
+		return;
+	}
+
+	if( fileStats.st_size > MAX_FILE_SIZE )
+	{
+		printf("put error: file size exceeds the max allowed size.\n");
+		return;
+	}
+
+	if( fileStats.st_size > getAmountOfFreeSpace() )
+	{
+		printf("put error: Not enough disk space.\n");
+		return;
+	}
+
+	if( !tryPutFile(physicalFileToGet) )
+	{
+		printf("put error: there was a problem, please try again.\n");
+		return;
+	}
+
+	if(DBG)
+	{
+		printf("DEBUG: handlePut() exiting...\n");
+	}
+
+	return;
+} // handlePut()
+
 void handleDf()
 {
   if(DBG)
@@ -270,9 +381,9 @@ void handleDf()
 
   if(DBG)
   {
-    printf("DEBUG: handleDf() ending...\n");
+    printf("DEBUG: handleDf() exiting...\n");
   }
-}
+} // handleDf()
 
 void handleList()
 {
@@ -281,9 +392,85 @@ void handleList()
     printf("DEBUG: handleList() starting...\n");
   }
 
+	struct DirectoryEntry * dirEntry = NULL;
+
+	int i;
+	for( i=0; i<(MAX_NUM_FILES*sizeof(struct DirectoryEntry)); i+=sizeof(struct DirectoryEntry) )
+	{
+		dirEntry = (struct DirectoryEntry *) &rootDir[i];
+		if((*dirEntry).isValid)
+		{
+			//printf("%-6d ")
+			printf("valid\n");
+		}
+	}
+
 
   if(DBG)
   {
-    printf("DEBUG: handleList() ending...\n");
+    printf("DEBUG: handleList() exiting...\n");
   }
+} // handleList()
+
+bool tryPutFile( char * pathToFile )
+{
+	if(DBG)
+	{
+		printf("DEBUG: tryPutFile() starting...\n");
+	}
+
+	// it shouldn't be, but doublecheck to ensure the file path is not NULL or empty
+	if(pathToFile == NULL || (strlen(pathToFile) == 0) )
+	{
+		if(DBG)
+		{
+			printf("ERROR -> tryPutFile(): provided file path is NULL or empty\n");
+		}
+		return false;
+	}
+
+	errno = 0;
+	FILE * fp = NULL;
+	fp = fopen(pathToFile, "r");
+
+	if( fp == NULL )
+	{
+		if(DBG)
+		{
+			printf("ERROR -> tryPutFile(): fopen failed with errno %d: %s\n", errno, strerror(errno));
+		}
+		return false;
+	}
+	else if(DBG)
+	{
+		printf("     : file opened successfully...\n");
+	}
+
+
+	if(DBG)
+	{
+		printf("DEBUG: tryPutFile() exiting...\n");
+	}
+
+	fclose(fp);
+
+	return true;
+} // tryPutFile()
+
+uint32_t getAmountOfFreeSpace()
+{
+	if(DBG)
+	{
+		printf("DEBUG: getAmountOfFreeSpace() starting...\n");
+	}
+
+	uint32_t freeBytes = 100000;
+	
+
+	if(DBG)
+	{
+		printf("DEBUG: getAmountOfFreeSpace() exiting...\n");
+	}
+
+	return freeBytes;
 }

@@ -302,18 +302,21 @@ void handlePut( char * fileToAdd )
 		printf("DEBUG: handlePut() starting...\n");
 	}
 
+	// ensure a file was specified, warn and bail if not
 	if(fileToAdd == NULL || (strlen(fileToAdd) == 0) )
 	{
 		printf("put error: Please enter a file name to put - ex. 'put foobar.txt'\n");
 		return;
 	}
 
+	// check if the specified file name is too long, warn and bail if so
 	if( strlen(fileToAdd) > MAX_FILENAME_LENGTH )
 	{
 		printf("put error: File name too long.\n");
 		return;
 	}
 
+	// ensure we have not reached the max # of files in the system yet, warn and bail if so
 	if( numValidDirEntries >= MAX_NUM_FILES )
 	{
 		printf("put error: the max number of files (%d) has been reached. ", MAX_NUM_FILES);
@@ -321,11 +324,11 @@ void handlePut( char * fileToAdd )
 		return;
 	}
 
-	// grab and store the current working directory, will need to free(cwdBuf) later
+	// grab and store the current working directory
 	char * cwdBuf = NULL;
 	cwdBuf = getcwd(NULL, 0);
 
-	// build the entire file path, which gets sent to fopen later
+	// use the current working dir to build the entire file path to feed to stat and fopen later
 	char physicalFileToGet[ strlen(cwdBuf) + strlen(fileToAdd) +2 ];
 	strcpy(physicalFileToGet,cwdBuf);
 	strcat(physicalFileToGet,"/");
@@ -337,6 +340,7 @@ void handlePut( char * fileToAdd )
 		printf("     : file to get: '%s'\n", physicalFileToGet);
 	}
 
+	// run stat() against the file, and warn and bail if there was a problem (i.e. FNF, etc.)
 	struct stat fileStats;
 	errno = 0;
 	if( stat(physicalFileToGet, &fileStats) != 0 )
@@ -345,18 +349,21 @@ void handlePut( char * fileToAdd )
 		return;
 	}
 
+	// check if the given file is larger than the allowed size, warn and bail if so
 	if( fileStats.st_size > MAX_FILE_SIZE )
 	{
 		printf("put error: file size exceeds the max allowed size.\n");
 		return;
 	}
 
+	// check to ensure there's enough free space on the fs for the file, warn and bail if not
 	if( fileStats.st_size > getAmountOfFreeSpace() )
 	{
 		printf("put error: Not enough disk space.\n");
 		return;
 	}
 
+	// call the tryPutFile() function, which does the actual file copying work
 	if( !tryPutFile(physicalFileToGet) )
 	{
 		printf("put error: there was a problem, please try again.\n");
@@ -429,10 +436,12 @@ bool tryPutFile( char * pathToFile )
 		return false;
 	}
 
+	// try to open the given file
 	errno = 0;
 	FILE * fp = NULL;
 	fp = fopen(pathToFile, "r");
 
+	// warn and bail if there was a problem with fopen
 	if( fp == NULL )
 	{
 		if(DBG)
@@ -452,8 +461,10 @@ bool tryPutFile( char * pathToFile )
 		printf("DEBUG: tryPutFile() exiting...\n");
 	}
 
+	// close the opened file to release associated resources
 	fclose(fp);
 
+	// if we get here, then everything seemingly went OK, return successful
 	return true;
 } // tryPutFile()
 

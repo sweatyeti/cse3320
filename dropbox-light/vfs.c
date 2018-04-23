@@ -67,6 +67,9 @@
 // based on the max file size and block size, a file can consume no more than 32 blocks
 #define MAX_BLOCKS_PER_FILE 32
 
+// the data blocks start at block 129
+#define DATA_BLOCKS_START 129
+
 // enable/disable debug output
 bool DBG = false;
 
@@ -105,7 +108,7 @@ bool initVirtFS( void );
 void handleDf( void );
 void handleList( void );
 void handlePut ( char * );
-bool tryPutFile( char * );
+bool tryPutFile( char *, int );
 uint32_t getAmountOfFreeSpace( void );
 
 int main( int argc, char *argv[] )
@@ -286,6 +289,11 @@ bool initVirtFS()
 		printf("DEBUG: initVirtFS() starting...\n");
 	}
 
+	int i;
+	for( i=DATA_BLOCKS_START; i<NUM_BLOCKS; i++)
+	{
+		freeBlocks[i] = 1;
+	}
 
 
 	if(DBG)
@@ -349,23 +357,27 @@ void handlePut( char * fileToAdd )
 		return;
 	}
 
+	// store the file size as it gets used several times hereafter
+	int fileSize = fileStats.st_size
+
 	// check if the given file is larger than the allowed size, warn and bail if so
-	if( fileStats.st_size > MAX_FILE_SIZE )
+	if( fileSize > MAX_FILE_SIZE )
 	{
 		printf("put error: file size exceeds the max allowed size.\n");
 		return;
 	}
 
 	// check to ensure there's enough free space on the fs for the file, warn and bail if not
-	if( fileStats.st_size > getAmountOfFreeSpace() )
+	if( fileSize > getAmountOfFreeSpace() )
 	{
 		printf("put error: Not enough disk space.\n");
 		return;
 	}
 
 	// call the tryPutFile() function, which does the actual file copying work
-	if( !tryPutFile(physicalFileToGet) )
+	if( !tryPutFile(physicalFileToGet, fileSize) )
 	{
+		// if the PUT failed, inform and bail
 		printf("put error: there was a problem, please try again.\n");
 		return;
 	}
@@ -419,15 +431,15 @@ void handleList()
   }
 } // handleList()
 
-bool tryPutFile( char * pathToFile )
+bool tryPutFile( char * pathToFile, int fileSize )
 {
 	if(DBG)
 	{
 		printf("DEBUG: tryPutFile() starting...\n");
 	}
 
-	// it shouldn't be, but doublecheck to ensure the file path is not NULL or empty
-	if(pathToFile == NULL || (strlen(pathToFile) == 0) )
+	// validate params
+	if(pathToFile == NULL || (strlen(pathToFile) == 0) || fileSize < 0 )
 	{
 		if(DBG)
 		{
@@ -455,6 +467,9 @@ bool tryPutFile( char * pathToFile )
 		printf("     : file opened successfully...\n");
 	}
 
+	// do copy work here
+
+	// then, create the directory entry and add it to the directory
 
 	if(DBG)
 	{
@@ -475,13 +490,37 @@ uint32_t getAmountOfFreeSpace()
 		printf("DEBUG: getAmountOfFreeSpace() starting...\n");
 	}
 
-	uint32_t freeBytes = 100000;
-	
+	int i;
+	uint32_t count=0;
+	for( i=DATA_BLOCKS_START; i<NUM_BLOCKS; i++)
+	{
+		if( freeBlocks[i] == 1 )
+		{
+			count++;
+		}
+	}	
 
 	if(DBG)
 	{
+		printf("     : current free bytes: %d\n", count*BLOCK_SIZE);
 		printf("DEBUG: getAmountOfFreeSpace() exiting...\n");
 	}
 
-	return freeBytes;
-}
+	return count*BLOCK_SIZE;
+} // getAmountOfFreeSpace()
+
+int getIndexOfNextFreeBlock()
+{
+	int i;
+	int index = -1;
+	for( i=DATA_BLOCKS_START; i<NUM_BLOCKS; i++ )
+	{
+		if( freeBlocks[i] == 1 )
+		{
+			index = i;
+			break;
+		}
+	}
+
+	return index;
+} // getIndexOfNextFreeBlock()

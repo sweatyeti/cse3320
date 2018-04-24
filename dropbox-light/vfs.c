@@ -108,7 +108,8 @@ bool initVirtFS( void );
 void handleDf( void );
 void handleList( void );
 void handlePut ( char * );
-bool tryPutFile( char *, int );
+bool tryPutFile( char *, char *, int );
+void createDirectoryEntry( char *, int, int * );
 uint32_t getAmountOfFreeSpace( void );
 int getIndexOfNextFreeBlock( void );
 
@@ -219,13 +220,12 @@ int main( int argc, char *argv[] )
 		// check for quit/exit commands and break out of main loop if received
 		if( strcmp(command, "quit") == 0 || strcmp(command, "exit") == 0) 
 		{
-			// before exiting, ensure any open image is closed via cleanUp()
 			//cleanUp();
 			break;
 		}
 
 		// check the entered mfs command against known commands, and call the appropriate function
-		// change this to switch/case? would break for the switch interfere with the loop?
+		// change this to switch/case?
 
 		if( strcmp(command, "get") == 0)
 		{
@@ -259,7 +259,7 @@ int main( int argc, char *argv[] )
 
 		if( strcmp(command, "dbg") == 0)
 		{
-			// enable or disable dbg output via the program itself
+			// enable or disable dbg output
 			DBG = !DBG;
 			printf("Debug output ");
 			if(DBG)
@@ -290,6 +290,8 @@ bool initVirtFS()
 		printf("DEBUG: initVirtFS() starting...\n");
 	}
 
+	// when the program is just starting out, every data block is 
+	// free, so mark the associated index array with all 1's to indicate this
 	int i;
 	for( i=DATA_BLOCKS_START; i<NUM_BLOCKS; i++)
 	{
@@ -301,7 +303,10 @@ bool initVirtFS()
 	{
 		printf("DEBUG: initVirtFS() exiting...\n");
 	}
+
+	// if we get here then all is well, return successful
 	return true;
+
 } // initVirtFS()
 
 void handlePut( char * fileToAdd )
@@ -342,6 +347,8 @@ void handlePut( char * fileToAdd )
 	strcpy(physicalFileToGet,cwdBuf);
 	strcat(physicalFileToGet,"/");
 	strcat(physicalFileToGet,fileToAdd);
+
+	// we're finished with the cwdBuf from getcwd() above, so release its resources
 	free(cwdBuf);
 
 	if(DBG)
@@ -376,7 +383,7 @@ void handlePut( char * fileToAdd )
 	}
 
 	// call the tryPutFile() function, which does the actual file copying work
-	if( !tryPutFile(physicalFileToGet, fileSize) )
+	if( !tryPutFile( fileToAdd, physicalFileToGet, fileSize) )
 	{
 		// if the PUT failed, inform and bail
 		printf("put error: there was a problem, please try again.\n");
@@ -432,7 +439,7 @@ void handleList()
   }
 } // handleList()
 
-bool tryPutFile( char * pathToFile, int fileSize )
+bool tryPutFile( char * fileName, char * pathToFile, int fileSize )
 {
 	if(DBG)
 	{
@@ -440,11 +447,11 @@ bool tryPutFile( char * pathToFile, int fileSize )
 	}
 
 	// validate params
-	if(pathToFile == NULL || (strlen(pathToFile) == 0) || fileSize < 0 )
+	if(fileName == NULL || pathToFile == NULL || (strlen(pathToFile) == 0) || fileSize < 0 )
 	{
 		if(DBG)
 		{
-			printf("ERROR -> tryPutFile(): provided file path is NULL or empty\n");
+			printf("ERROR -> tryPutFile(): invalid parameter, bailing..\n");
 		}
 		return false;
 	}
@@ -465,67 +472,99 @@ bool tryPutFile( char * pathToFile, int fileSize )
 	}
 	else if(DBG)
 	{
-		printf("     : file opened successfully, attempting to read file of size %d into the fs...\n", fileSize);
+		printf("     : tryPutFile(): file opened successfully, attempting to read file of size %d into the fs...\n", fileSize);
 	}
 
+	// initialize the counter that keeps track of how many bytes need to be read.
+	// this gets decremented in the loop below 
 	int bytesToBeRead = fileSize;
+
+	// intialize the counter that keeps track of where we are in the file to be read
+	// this gets incremented in the loop below as we get further into the file
 	int fileOffset = 0;
+
+	// declare and init the int array that stores which blocks a file is using
+	// initialize with 0 since a file cannot use block 0, so it's a good indicator
+	// this arr becomes the index in the inode for the dir entry
 	int blocksUsed[MAX_BLOCKS_PER_FILE];
+	int i;
+	for( i=0; i<MAX_BLOCKS_PER_FILE; i++)
+	{
+		blocksUsed[i] = 0;
+	}
+
+	// init a a counter that keeps track of how many times the loop iterates
+	// this counter is used specifically for the blocksUsed array to help keep track of those
 	int counter = 0;
 
+	// this is the loop that attempts to read all bytes from the input file
 	while( bytesToBeRead > 0 )
-	{
+	{	
+
+		// get and store the index location of the next free block; it will get the data from the file
 		int freeBlockIndex = getIndexOfNextFreeBlock();
 
 		if(DBG)
 		{
-			printf("     : writing to block %d...\n", freeBlockIndex);
+			printf("     : tryPutFile(): writing to block %d...\n", freeBlockIndex);
 		}
 
+		// navigate to the offset location in the file 
 		fseek( fp, fileOffset, SEEK_SET );
 
+		// clear any errors in the file stream before attempting to read
+		clearerr(fp);
+
+		// attempt to read the file in chunks of BLOCK_SIZE, store how many bytes were actually read
 		int bytesRead = fread( vfs[freeBlockIndex], 1, BLOCK_SIZE, fp );
 
 		if(DBG)
 		{
-			printf("     : file bytes read: %d\n", bytesRead);
+			printf("     : tryPutFile(): file bytes read: %d\n", bytesRead);
 		}
 
+		// if 0 bytes were read, yet it's not EOF, then there was a problem, warn and bail
 		if( bytesRead == 0 && !feof(fp) )
 		{
 			printf("An error occurred reading from the file. Please try again.\n");
+			// BUGBUG: need to undo any work that was done here if a problem happens
 			if(DBG)
 			{
-				printf("     : fread() returned 0 bytes and it was not EOF\n");
+				printf("     : tryPutFile(): fread() returned 0 bytes and it was not EOF\n");
 			}
+			// since we're bailing, close the file to release associated resources
 			fclose(fp);
 			return false;
 		}
 
-		clearerr(fp);
-
+		// we've read x # bytes, so decrement the bytesToBeRead counter
+		// this will keep decrementing until it reaches 0, which breaks the loop
 		bytesToBeRead -= bytesRead;
 
+		// since we've read a BLOCK_SIZE amount of bytes potentially, increase our offset by that much
 		fileOffset += BLOCK_SIZE;
 
+		// add the index of the block containing the data to the index array for the inode
 		blocksUsed[counter] = freeBlockIndex;
 
+		// mark the free block we used as no longer free
 		freeBlocks[freeBlockIndex] = 0;
 
+		// increase the loop counter, and continue with the loop
 		counter++;
 	}
 
 	if(DBG)
 	{
-		printf("     : file read successfully, creating directory entry...\n");
+		printf("     : tryPutFile(): file read successfully, creating directory entry...\n");
 	}
 
 	// close the opened file to release associated resources
 	fclose(fp);
 
-	// create the directory entry and add it to the directory here
-
-
+	// create the dir entry and associated inode, and insert the entry into the directory
+	createDirectoryEntry( fileName, fileSize, blocksUsed );
+	
 	if(DBG)
 	{
 		printf("DEBUG: tryPutFile() exiting...\n");
@@ -533,7 +572,13 @@ bool tryPutFile( char * pathToFile, int fileSize )
 
 	// if we get here, then everything seemingly went OK, return successful
 	return true;
+
 } // tryPutFile()
+
+void createDirectoryEntry( char * name, int size, int blocks[] )
+{
+
+} // createDirectoryEntry()
 
 uint32_t getAmountOfFreeSpace()
 {
@@ -542,6 +587,8 @@ uint32_t getAmountOfFreeSpace()
 		printf("DEBUG: getAmountOfFreeSpace() starting...\n");
 	}
 
+	// starting at the first data block index, check each block index (via the index array) 
+	// to see if the associated data block is free. If it is, increment the count variable
 	int i;
 	uint32_t count=0;
 	for( i=DATA_BLOCKS_START; i<NUM_BLOCKS; i++)
@@ -554,15 +601,21 @@ uint32_t getAmountOfFreeSpace()
 
 	if(DBG)
 	{
-		printf("     : current free bytes: %d\n", count*BLOCK_SIZE);
+		printf("     : getAmountOfFreeSpace(): current free bytes: %d\n", count*BLOCK_SIZE);
 		printf("DEBUG: getAmountOfFreeSpace() exiting...\n");
 	}
 
+	// return the product of how many blocks are free and the BLOCK_SIZE, which is the 
+	// amount of overall free space in bytes
 	return count*BLOCK_SIZE;
+
 } // getAmountOfFreeSpace()
 
 int getIndexOfNextFreeBlock()
 {
+	// starting at the first data block index, check each block index (via the index array) 
+	// to see if the associated data block is free. If it is, return the index of that free block
+	// to the caller
 	int i;
 	int index = -1;
 	for( i=DATA_BLOCKS_START; i<NUM_BLOCKS; i++ )
@@ -575,4 +628,5 @@ int getIndexOfNextFreeBlock()
 	}
 
 	return index;
+
 } // getIndexOfNextFreeBlock()

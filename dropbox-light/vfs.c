@@ -110,6 +110,7 @@ void handleList( void );
 void handlePut ( char * );
 bool tryPutFile( char *, int );
 uint32_t getAmountOfFreeSpace( void );
+int getIndexOfNextFreeBlock( void );
 
 int main( int argc, char *argv[] )
 {
@@ -202,7 +203,7 @@ int main( int argc, char *argv[] )
 			int token_index = 0;
 			for( token_index = 0; token_index < token_count; token_index ++ ) 
 			{
-				printf("DEBUG: main(): token[%d] = %s\n", token_index, tokens[token_index]);
+				printf("     : main(): token[%d] = %s\n", token_index, tokens[token_index]);
 			}
 		}
 
@@ -358,7 +359,7 @@ void handlePut( char * fileToAdd )
 	}
 
 	// store the file size as it gets used several times hereafter
-	int fileSize = fileStats.st_size
+	int fileSize = fileStats.st_size;
 
 	// check if the given file is larger than the allowed size, warn and bail if so
 	if( fileSize > MAX_FILE_SIZE )
@@ -464,20 +465,71 @@ bool tryPutFile( char * pathToFile, int fileSize )
 	}
 	else if(DBG)
 	{
-		printf("     : file opened successfully...\n");
+		printf("     : file opened successfully, attempting to read file of size %d into the fs...\n", fileSize);
 	}
 
-	// do copy work here
+	int bytesToBeRead = fileSize;
+	int fileOffset = 0;
+	int blocksUsed[MAX_BLOCKS_PER_FILE];
+	int counter = 0;
 
-	// then, create the directory entry and add it to the directory
+	while( bytesToBeRead > 0 )
+	{
+		int freeBlockIndex = getIndexOfNextFreeBlock();
+
+		if(DBG)
+		{
+			printf("     : writing to block %d...\n", freeBlockIndex);
+		}
+
+		fseek( fp, fileOffset, SEEK_SET );
+
+		int bytesRead = fread( vfs[freeBlockIndex], 1, BLOCK_SIZE, fp );
+
+		if(DBG)
+		{
+			printf("     : file bytes read: %d\n", bytesRead);
+		}
+
+		if( bytesRead == 0 && !feof(fp) )
+		{
+			printf("An error occurred reading from the file. Please try again.\n");
+			if(DBG)
+			{
+				printf("     : fread() returned 0 bytes and it was not EOF\n");
+			}
+			fclose(fp);
+			return false;
+		}
+
+		clearerr(fp);
+
+		bytesToBeRead -= bytesRead;
+
+		fileOffset += BLOCK_SIZE;
+
+		blocksUsed[counter] = freeBlockIndex;
+
+		freeBlocks[freeBlockIndex] = 0;
+
+		counter++;
+	}
+
+	if(DBG)
+	{
+		printf("     : file read successfully, creating directory entry...\n");
+	}
+
+	// close the opened file to release associated resources
+	fclose(fp);
+
+	// create the directory entry and add it to the directory here
+
 
 	if(DBG)
 	{
 		printf("DEBUG: tryPutFile() exiting...\n");
 	}
-
-	// close the opened file to release associated resources
-	fclose(fp);
 
 	// if we get here, then everything seemingly went OK, return successful
 	return true;

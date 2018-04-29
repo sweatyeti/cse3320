@@ -114,13 +114,15 @@ struct DirectoryEntry (* rootDirEntries)[MAX_NUM_FILES] = (struct DirectoryEntry
 bool initVirtFS( void );
 void handleDf( void );
 void handleList( void );
-void handlePut ( char * );
+void handlePut( char * );
+void handleDel( char * );
 bool tryPutFile( char *, char *, int );
+bool tryDelFile( struct DirectoryEntry * );
 void createDirectoryEntry( char *, int, int * );
 uint32_t getAmountOfFreeSpace( void );
 int getIndexOfNextFreeBlock( void );
 int getIndexOfNextFreeDirEntry( void );
-struct inode * getInode( int );
+struct inode * getInode( uint8_t );
 
 int main( int argc, char *argv[] )
 {
@@ -250,7 +252,7 @@ int main( int argc, char *argv[] )
 
     if( strcmp(command, "del") == 0)
 		{
-			//handleDel(tokens[1]);
+			handleDel(tokens[1]);
 			continue;
 		}
 
@@ -315,22 +317,22 @@ bool initVirtFS()
 		printf("finished\n");
 	}
 
-	// initialize all root dir entries
+	// initialize all root dir entries and inodes
 	// they are marked as invalid to start, and marked valid later as files are PUT in
 	if(DBG)
 	{
-		printf("     : initVirtFS(): initializing root dir entries...");
+		printf("     : initVirtFS(): initializing root dir entries...\n");
 	}
 	for( i=0; i<MAX_NUM_FILES; i++)
 	{
 		rootDirEntries[i]->isValid = false;
 		rootDirEntries[i]->inodeBlockIndex = i + INODE_BLOCKS_START;
-		//struct inode * inodePtr = (struct inode *) vfs[i + INODE_BLOCKS_START];
-		//inodePtr->isValid = false;
+		struct inode * inodePtr = getInode(rootDirEntries[i]->inodeBlockIndex);
+		inodePtr->isValid = false;
 	}
 	if(DBG)
 	{
-		printf("finished\n");
+		printf("DEBUG: initVirtFS(): initializing root dir entries...finished\n");
 	}
 
 
@@ -421,8 +423,12 @@ void handlePut( char * fileToAdd )
 	if( !tryPutFile( fileToAdd, physicalFileToGet, fileSize) )
 	{
 		// if the PUT failed, inform and bail
-		printf("put error: there was a problem, please try again.\n");
+		printf("put error: There was a problem, please try again.\n");
 		return;
+	}
+	else
+	{
+		printf("put: File added successfully.\n");
 	}
 
 	if(DBG)
@@ -482,34 +488,63 @@ void handleList()
 			// print the size with a width of 7 characters, left justified
 			printf("%-7d ", rootDirEntries[i]->size);
 
+			// convert the stored time offset to a localized time struct
 			struct tm * locTime = localtime(&(rootDirEntries[i]->offsetTimeAdded));
 
+			// var to hold the # chars stored in the string to be displayed from strftime() call
 			uint16_t dtNumChars = 0;
 
+			// this loop's purpose is to ensure enough memory is allocate for the strftime() call
 			while(true)
 			{
+				// create the formatted date/time string that will get output
 				dtNumChars = strftime(datetimeStr, dtMaxLength, "%b %d %R", locTime);
+
+				// that call returns 0 if the # chars needed exceeds the dtMaxLength
 				if(dtNumChars == 0)
 				{
 					if(DBG)
 					{
 						printf("     : handleList(): reallocating more memory for the datetime string..\n");
 					}
+					
+					// if the max length was exceeded, double the allotted max size and reallocate memory
 					dtNumChars+=dtNumChars;
 					datetimeStr = (char*) realloc(datetimeStr, dtNumChars);
 					continue;
 				}
 				else
 				{
+					// if we get there, then there was enough memory to save the datetime string, output it
 					printf("%s ", datetimeStr);
 					break;
 				}
 			}
 			
+			// output the file name now
 			printf("%s\n", rootDirEntries[i]->name);
+
+			if(DBG)
+			{
+				// for debug output, include the used data blocks on the next line
+				struct inode * inodePtr = getInode(rootDirEntries[i]->inodeBlockIndex);
+				printf("DBG: used data blocks for file above:\n[");
+				int j;
+				for( j=0; j<MAX_BLOCKS_PER_FILE; j++ )
+				{
+					if(inodePtr->dataBlocks[j] != -1)
+					{
+						printf(" %d", inodePtr->dataBlocks[j]);
+					}
+				}
+				printf(" ]\n");
+			}
 
 		}
 	}
+
+	// since malloc was used for datetimeStr, free it since we're done with it
+	free(datetimeStr);
 
 	// if we've gone through the whole list of entries and the bool was never set to true,
 	// then no entries were valid, thus none exist, so inform the user
@@ -524,6 +559,71 @@ void handleList()
   }
 	return;
 } // handleList()
+
+void handleDel( char * fileToDel )
+{
+	if(DBG)
+  {
+    printf("DEBUG: handleDel() starting...\n");
+  }
+
+	// ensure a file was specified, warn and bail if not
+	if(fileToDel == NULL || (strlen(fileToDel) == 0) )
+	{
+		printf("del error: Please enter a file name to delete - ex. 'del foobar.txt'\n");
+		return;
+	}
+
+	// flag to set if a matching file name was found
+	bool fileFound = false;
+
+	// this flag will be set if a file was actually deleted
+	bool fileDeleted = false;
+
+	// loop through each dir entry
+	int i;
+	for( i=0; i<MAX_NUM_FILES; i++)
+	{
+		// check if the dir entry is valid
+		if( rootDirEntries[i]->isValid == true )
+		{
+			// check the name of the valid entry to see if it matches the user input
+			if( strcmp(fileToDel, rootDirEntries[i]->name) == 0 )
+			{
+				// set the flag
+				fileFound = true;
+
+				// try to delete the file
+				fileDeleted = tryDelFile( rootDirEntries[i] );
+				
+				// break the loop since we found a file that matched
+				break;
+			}
+		}
+	}
+
+	if(fileFound && fileDeleted)
+	{
+		// the file was found and deleted, all is well, inform the user
+		printf("del: File deleted successfully.\n");
+	}
+	else if(fileFound && !fileDeleted)
+	{
+		// the file was found, but it wasn't deleted for some reason, alert the user
+		printf("del error: There was a problem deleting the file. Please try again.\n");
+	}
+	else
+	{
+		// the file was not found, inform the user
+		printf("del error: File not found.\n");
+	}
+
+	if(DBG)
+  {
+    printf("DEBUG: handleDel() exiting...\n");
+  }
+	return;
+} // handleDel()
 
 bool tryPutFile( char * fileName, char * pathToFile, int fileSize )
 {
@@ -570,12 +670,12 @@ bool tryPutFile( char * fileName, char * pathToFile, int fileSize )
 	int fileOffset = 0;
 
 	// declare and init the int array that stores which blocks a file is using
-	// initialize with 0 since a file cannot use block 0, so it's a good indicator
+	// initialize with -1 since that block is nonexistent, so it's a good tail indicator
 	int blocksUsed[MAX_BLOCKS_PER_FILE];
 	int i;
-	for( i=0; i<MAX_BLOCKS_PER_FILE; i++)
+	for( i=0; i<MAX_BLOCKS_PER_FILE; i++ )
 	{
-		blocksUsed[i] = 0;
+		blocksUsed[i] = -1;
 	}
 
 	// init a a counter that keeps track of how many times the loop iterates
@@ -591,7 +691,7 @@ bool tryPutFile( char * fileName, char * pathToFile, int fileSize )
 
 		if(DBG)
 		{
-			printf("     : tryPutFile(): writing to block %d...\n", freeBlockIndex);
+			printf("     : tryPutFile(): writing to block %d...", freeBlockIndex);
 		}
 
 		// navigate to the offset location in the file 
@@ -605,6 +705,7 @@ bool tryPutFile( char * fileName, char * pathToFile, int fileSize )
 
 		if(DBG)
 		{
+			printf("done\n");
 			printf("     : tryPutFile(): file bytes read: %d\n", bytesRead);
 		}
 
@@ -660,6 +761,60 @@ bool tryPutFile( char * fileName, char * pathToFile, int fileSize )
 
 } // tryPutFile()
 
+bool tryDelFile( struct DirectoryEntry * entryPtr )
+{
+	if(DBG)
+	{
+		printf("DEBUG: tryDelFile starting...\n");
+	}
+
+	struct inode * inodePtr = getInode(entryPtr->inodeBlockIndex);
+
+	// copy the used data blocks for the temp blocks array into the memory inside the fs
+	int i;
+	for( i=0; i<MAX_BLOCKS_PER_FILE; i++ )
+	{
+		// if the current dataBlocks[i] value is != -1, then mark the i block as free
+		if( inodePtr->dataBlocks[i] != -1 )
+		{
+			if(DBG)
+			{
+				printf("     : tryDelFile(): marking data block %d as free...", inodePtr->dataBlocks[i]);
+			}
+			freeBlocks[inodePtr->dataBlocks[i]] = 1;
+			if(DBG)
+			{
+				printf("done\n");
+			}
+		}
+		else
+		{
+			// break if the current block is -1, since that indicates the end of the used blocks
+			if(DBG)
+			{
+				printf("     : tryDelFile(): all used blocks freed...\n");
+			}
+			break;
+		}		
+	}
+
+	// free the inode
+	inodePtr->isValid = false;
+
+	// free the DirectoryEntry
+	entryPtr->isValid = false;
+
+	if(DBG)
+	{
+		printf("     : tryDelFile(): inode and DirectoryEntry (entry ID %d) marked invalid/free\n", entryPtr->inodeBlockIndex);
+		printf("DEBUG: tryDelFile exiting...\n");
+	}
+
+	// if we got here, then everything above was succeesful, return true
+	return true;
+
+} // tryDelFile()
+
 void createDirectoryEntry( char * name, int size, int blocks[] )
 {
 	if(DBG)
@@ -682,18 +837,24 @@ void createDirectoryEntry( char * name, int size, int blocks[] )
 
 	if(DBG)
 	{
-		printf("     : createDirectoryEntry(): assigning entry values...\n");
+		printf("     : createDirectoryEntry(): assigning entry values...");
 	}
+
 	strcpy( rootDirEntries[idx]->name, name );
 	rootDirEntries[idx]->size = size;
 	rootDirEntries[idx]->isValid = true;
 	rootDirEntries[idx]->offsetTimeAdded = time(NULL);
+	
+	if(DBG)
+	{
+		printf("done\n");
+	}
 
-	struct inode * inodePtr = getInode(idx);
+	struct inode * inodePtr = getInode(rootDirEntries[idx]->inodeBlockIndex);
 
 	if(DBG)
 	{
-		printf("     : createDirectoryEntry(): assigning inode values...\n");
+		printf("     : createDirectoryEntry(): assigning inode values...");
 	}
 
 	inodePtr->isValid = true;
@@ -702,15 +863,12 @@ void createDirectoryEntry( char * name, int size, int blocks[] )
 	int i;
 	for( i=0; i<MAX_BLOCKS_PER_FILE; i++ )
 	{
-		// since blocks[] had every element init'd to 0 earlier, we know all blocks have been read
-		// if the current iteration results in 0, so break out of the loop
-		if( blocks[i] == 0 )
-		{
-			break;
-		}
-
 		// copy the value to fs memory
 		inodePtr->dataBlocks[i] = blocks[i];
+	}
+	if(DBG)
+	{
+		printf("done\n");
 	}
 
 	if(DBG)
@@ -813,7 +971,7 @@ int getIndexOfNextFreeDirEntry()
 
 } // getIndexOfNextFreeDirEntry()
 
-struct inode * getInode( int entry )
+struct inode * getInode( uint8_t entry )
 {
 	if(DBG)
 	{

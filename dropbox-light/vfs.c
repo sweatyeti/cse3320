@@ -70,14 +70,27 @@
 // the data blocks start at block 129
 #define DATA_BLOCKS_START 129
 
+// the inodes start at block 1
+#define INODE_BLOCKS_START 1
+
 // enable/disable debug output
-bool DBG = false;
+bool DBG = true;
 
 // create the virtual file system structure  
 uint8_t vfs[NUM_BLOCKS][BLOCK_SIZE];
 
 // this array keeps track of the free blocks
 int freeBlocks[NUM_BLOCKS];
+
+// define the struct that describes a directory entry in the vfs
+struct DirectoryEntry
+{
+  char name[MAX_FILENAME_LENGTH+1];
+  uint32_t size;
+  bool isValid;
+  uint8_t inodeBlockIndex;
+	time_t offsetTimeAdded;
+} __attribute__((__packed__));
 
 // define the struct that holds the index of data blocks for a file
 struct inode 
@@ -87,21 +100,15 @@ struct inode
 
 }__attribute__((__packed__));
 
-// define the struct that describes a directory entry in the vfs
-struct DirectoryEntry
-{
-  char name[32];
-  uint32_t size;
-  bool isValid;
-  uint8_t inodeBlockIndex;
-	time_t offsetTimeAdded;
-} __attribute__((__packed__));
-
-// define and init the global counter to keep track of the number of entries in the vfs
-uint8_t numValidDirEntries = 0;
-
 // create a pointer to the root directory
-uint8_t (* rootDir)[BLOCK_SIZE] = vfs; 
+uint8_t (* rootDir)[BLOCK_SIZE] = vfs;
+
+// using the rootDir pointer (which itself is a pointer to the start of the file system memory),
+// declare an array of MAX_NUM_FILES DirectoryEntry structs to easily access any of the entries
+struct DirectoryEntry (* rootDirEntries)[MAX_NUM_FILES] = (struct DirectoryEntry (*)[MAX_NUM_FILES]) rootDir;
+//struct DirectoryEntry rootDirEntries[MAX_NUM_FILES] = (struct DirectoryEntry (*)[MAX_NUM_FILES]) rootDir;
+//struct DirectoryEntry (* rootDirEntries)[MAX_NUM_FILES] = NULL;
+//rootDirEntries = (struct DirectoryEntry (*)[MAX_NUM_FILES]) rootDir;
 
 // function declarations
 bool initVirtFS( void );
@@ -112,11 +119,13 @@ bool tryPutFile( char *, char *, int );
 void createDirectoryEntry( char *, int, int * );
 uint32_t getAmountOfFreeSpace( void );
 int getIndexOfNextFreeBlock( void );
+int getIndexOfNextFreeDirEntry( void );
+struct inode * getInode( int );
 
 int main( int argc, char *argv[] )
 {
 	// check for any configured cmdline options
-	char c;
+	/*char c;
   while((c = getopt(argc,argv,"d"))!=-1) 
 	{
     switch(c) {
@@ -126,7 +135,7 @@ int main( int argc, char *argv[] )
 			default:
 				break;
     }
-  }
+  }*/
 
 	if(DBG)
 	{
@@ -292,10 +301,36 @@ bool initVirtFS()
 
 	// when the program is just starting out, every data block is 
 	// free, so mark the associated index array with all 1's to indicate this
+	if(DBG)
+	{
+		printf("     : initVirtFS(): marking all data blocks as free...");
+	}
 	int i;
 	for( i=DATA_BLOCKS_START; i<NUM_BLOCKS; i++)
 	{
 		freeBlocks[i] = 1;
+	}
+	if(DBG)
+	{
+		printf("finished\n");
+	}
+
+	// initialize all root dir entries
+	// they are marked as invalid to start, and marked valid later as files are PUT in
+	if(DBG)
+	{
+		printf("     : initVirtFS(): initializing root dir entries...");
+	}
+	for( i=0; i<MAX_NUM_FILES; i++)
+	{
+		rootDirEntries[i]->isValid = false;
+		rootDirEntries[i]->inodeBlockIndex = i + INODE_BLOCKS_START;
+		//struct inode * inodePtr = (struct inode *) vfs[i + INODE_BLOCKS_START];
+		//inodePtr->isValid = false;
+	}
+	if(DBG)
+	{
+		printf("finished\n");
 	}
 
 
@@ -331,7 +366,7 @@ void handlePut( char * fileToAdd )
 	}
 
 	// ensure we have not reached the max # of files in the system yet, warn and bail if so
-	if( numValidDirEntries >= MAX_NUM_FILES )
+	if( getIndexOfNextFreeDirEntry() == -1 )
 	{
 		printf("put error: the max number of files (%d) has been reached. ", MAX_NUM_FILES);
 		printf("Please remove a file before attempting to PUT another.\n");
@@ -353,7 +388,7 @@ void handlePut( char * fileToAdd )
 
 	if(DBG)
 	{
-		printf("     : file to get: '%s'\n", physicalFileToGet);
+		printf("     : handlePut(): file to get: '%s'\n", physicalFileToGet);
 	}
 
 	// run stat() against the file, and warn and bail if there was a problem (i.e. FNF, etc.)
@@ -405,11 +440,13 @@ void handleDf()
     printf("DEBUG: handleDf() starting...\n");
   }
 
+	printf("%d bytes free.\n", getAmountOfFreeSpace());
 
   if(DBG)
   {
     printf("DEBUG: handleDf() exiting...\n");
   }
+	return;
 } // handleDf()
 
 void handleList()
@@ -419,24 +456,31 @@ void handleList()
     printf("DEBUG: handleList() starting...\n");
   }
 
-	struct DirectoryEntry * dirEntry = NULL;
+	bool entriesExist = false;
 
 	int i;
-	for( i=0; i<(MAX_NUM_FILES*sizeof(struct DirectoryEntry)); i+=sizeof(struct DirectoryEntry) )
+	for( i=0; i<MAX_NUM_FILES; i++ )
 	{
-		dirEntry = (struct DirectoryEntry *) &rootDir[i];
-		if((*dirEntry).isValid)
+		//struct DirectoryEntry *dirEntry = &rootDirEntries[i];
+		if( rootDirEntries[i]->isValid )
 		{
-			//printf("%-6d ")
-			printf("valid\n");
+			entriesExist = true;
+			printf("-*- entry %d valid\n", i);
 		}
 	}
 
+	// if we've gone through the whole list of entries and the bool was never set to true,
+	// then no entries were valid, thus none exist, so inform the user
+	if(!entriesExist)
+	{
+		printf("list: No files found.\n");
+	}
 
   if(DBG)
   {
     printf("DEBUG: handleList() exiting...\n");
   }
+	return;
 } // handleList()
 
 bool tryPutFile( char * fileName, char * pathToFile, int fileSize )
@@ -485,7 +529,6 @@ bool tryPutFile( char * fileName, char * pathToFile, int fileSize )
 
 	// declare and init the int array that stores which blocks a file is using
 	// initialize with 0 since a file cannot use block 0, so it's a good indicator
-	// this arr becomes the index in the inode for the dir entry
 	int blocksUsed[MAX_BLOCKS_PER_FILE];
 	int i;
 	for( i=0; i<MAX_BLOCKS_PER_FILE; i++)
@@ -577,7 +620,62 @@ bool tryPutFile( char * fileName, char * pathToFile, int fileSize )
 
 void createDirectoryEntry( char * name, int size, int blocks[] )
 {
+	if(DBG)
+	{
+		printf("DEBUG: createDirectoryEntry() starting...\n");
+	}
 
+	int idx = getIndexOfNextFreeDirEntry();
+
+	if(idx == -1)
+	{
+		printf("There was a problem and the program needs to exit.\n");
+		if(DBG)
+		{
+			printf("     : createDirectoryEntry(): getIndexOfNextFreeDirEntry() returned -1, ");
+			printf("this should not happen here, and indicates an unrecoverable problem.\n");
+		}
+		exit(EXIT_FAILURE);
+	}
+
+	if(DBG)
+	{
+		printf("     : createDirectoryEntry(): assigning entry values...\n");
+	}
+	strcpy( rootDirEntries[idx]->name, name );
+	rootDirEntries[idx]->size = size;
+	rootDirEntries[idx]->isValid = true;
+	//rootDirEntries[idx]->offsetTimeAdded = ;
+
+	struct inode * inodePtr = getInode(idx);
+
+	if(DBG)
+	{
+		printf("     : createDirectoryEntry(): assigning inode values...\n");
+	}
+
+	inodePtr->isValid = true;
+
+	// copy the used data blocks for the temp blocks array into the memory inside the fs
+	int i;
+	for( i=0; i<MAX_BLOCKS_PER_FILE; i++ )
+	{
+		// since blocks[] had every element init'd to 0 earlier, we know all blocks have been read
+		// if the current iteration results in 0, so break out of the loop
+		if( blocks[i] == 0 )
+		{
+			break;
+		}
+
+		// copy the value to fs memory
+		inodePtr->dataBlocks[i] = blocks[i];
+	}
+
+	if(DBG)
+	{
+		printf("DEBUG: createDirectoryEntry() exiting...\n");
+	}
+	return;
 } // createDirectoryEntry()
 
 uint32_t getAmountOfFreeSpace()
@@ -613,6 +711,10 @@ uint32_t getAmountOfFreeSpace()
 
 int getIndexOfNextFreeBlock()
 {
+	if(DBG)
+	{
+		printf("DEBUG: getIndexOfNextFreeBlock() starting...\n");
+	}
 	// starting at the first data block index, check each block index (via the index array) 
 	// to see if the associated data block is free. If it is, return the index of that free block
 	// to the caller
@@ -627,6 +729,63 @@ int getIndexOfNextFreeBlock()
 		}
 	}
 
+	if(DBG)
+	{
+		printf("     : getIndexOfNextFreeBlock(): next free block idx: %d\n", index);
+		printf("DEBUG: getIndexOfNextFreeBlock() exiting...\n");
+	}
 	return index;
 
 } // getIndexOfNextFreeBlock()
+
+int getIndexOfNextFreeDirEntry()
+{
+	if(DBG)
+	{
+		printf("DEBUG: getIndexOfNextFreeDirEntry() starting...\n");
+	}
+
+	// set a default value of -1 so it gets returned if there are no free entries
+	// this indicates every entry up to the max is valid, and thus we cannot accept more
+	int index = -1;
+
+	// iterate through the dir entries array to check which is the next free (aka invalid) one
+	int i;
+	for( i=0; i<MAX_NUM_FILES; i++)
+	{
+		if( rootDirEntries[i]->isValid == false )
+		{
+			// if we found an entry that is not valid, set the index var and break out of the loop
+			// (this means the entry is free for use)
+			index = i;
+			break;
+		}
+	}
+
+	if(DBG)
+	{
+		printf("     : getIndexOfNextFreeDirEntry(): next free dir entry idx: %d\n", index);
+		printf("DEBUG: getIndexOfNextFreeDirEntry() exiting...\n");
+	}
+	return index;
+
+} // getIndexOfNextFreeDirEntry()
+
+struct inode * getInode( int entry )
+{
+	if(DBG)
+	{
+		printf("DEBUG: getInode() starting...\n");
+	}
+
+	struct inode * ptr = NULL;
+
+	ptr = (struct inode *) &vfs[INODE_BLOCKS_START + entry];
+
+	if(DBG)
+	{
+		printf("DEBUG: getInode() exiting...\n");
+	}
+	return ptr;
+
+} //getInode()

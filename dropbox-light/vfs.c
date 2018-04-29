@@ -74,7 +74,7 @@
 #define INODE_BLOCKS_START 1
 
 // enable/disable debug output
-bool DBG = true;
+bool DBG = false;
 
 // create the virtual file system structure  
 uint8_t vfs[NUM_BLOCKS][BLOCK_SIZE];
@@ -125,7 +125,7 @@ struct inode * getInode( int );
 int main( int argc, char *argv[] )
 {
 	// check for any configured cmdline options
-	/*char c;
+	char c;
   while((c = getopt(argc,argv,"d"))!=-1) 
 	{
     switch(c) {
@@ -135,7 +135,7 @@ int main( int argc, char *argv[] )
 			default:
 				break;
     }
-  }*/
+  }
 
 	if(DBG)
 	{
@@ -645,7 +645,7 @@ void createDirectoryEntry( char * name, int size, int blocks[] )
 	strcpy( rootDirEntries[idx]->name, name );
 	rootDirEntries[idx]->size = size;
 	rootDirEntries[idx]->isValid = true;
-	//rootDirEntries[idx]->offsetTimeAdded = ;
+	rootDirEntries[idx]->offsetTimeAdded = time(NULL);
 
 	struct inode * inodePtr = getInode(idx);
 

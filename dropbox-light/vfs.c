@@ -456,7 +456,16 @@ void handleList()
     printf("DEBUG: handleList() starting...\n");
   }
 
+	// flag to see if any entries were displayed when navigating through them
+	// starts as false, and is only set to true if at least one entry exists
 	bool entriesExist = false;
+
+	// to attempt to be safe with memory, specify the max length for how 
+	// long the datetime string will be at most
+	uint16_t dtMaxLength = 15;
+
+	// alloc mem for the string that holds the date & time characters
+	char * datetimeStr = (char*) malloc(dtMaxLength);
 
 	int i;
 	for( i=0; i<MAX_NUM_FILES; i++ )
@@ -464,8 +473,41 @@ void handleList()
 		//struct DirectoryEntry *dirEntry = &rootDirEntries[i];
 		if( rootDirEntries[i]->isValid )
 		{
+			// ensure for this iteration of the loop that we have teh orig max length value
+			dtMaxLength = 15;
+
+			// set the flag
 			entriesExist = true;
-			printf("-*- entry %d valid\n", i);
+
+			// print the size with a width of 7 characters, left justified
+			printf("%-7d ", rootDirEntries[i]->size);
+
+			struct tm * locTime = localtime(&(rootDirEntries[i]->offsetTimeAdded));
+
+			uint16_t dtNumChars = 0;
+
+			while(true)
+			{
+				dtNumChars = strftime(datetimeStr, dtMaxLength, "%b %d %R", locTime);
+				if(dtNumChars == 0)
+				{
+					if(DBG)
+					{
+						printf("     : handleList(): reallocating more memory for the datetime string..\n");
+					}
+					dtNumChars+=dtNumChars;
+					datetimeStr = (char*) realloc(datetimeStr, dtNumChars);
+					continue;
+				}
+				else
+				{
+					printf("%s ", datetimeStr);
+					break;
+				}
+			}
+			
+			printf("%s\n", rootDirEntries[i]->name);
+
 		}
 	}
 

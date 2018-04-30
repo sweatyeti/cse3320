@@ -913,13 +913,58 @@ bool tryGetFile( struct DirectoryEntry * entryPtr, char * newFilename )
 	strcat(outFilePathAndName,"/");
 	strcat(outFilePathAndName,filename);
 
+	// done with provided cwdBuf, free it
+	free(cwdBuf);
+
 	if(DBG)
 	{
 		printf("     : tryGetFile(): file to write: %s\n", outFilePathAndName );
 	}
 
-	// done with provided cwdBuf, free it
-	free(cwdBuf);
+	// get the entry's associated inode
+	struct inode * inodePtr = getInode(entryPtr->inodeBlockIndex);
+
+	// attempt to open the file for writing
+	errno = 0;
+	FILE * fp;
+	fp = fopen( outFilePathAndName, "w" );
+
+	// check to ensure the file opened, return false if it didn't since we cannot continue
+	if(fp == NULL)
+	{
+		if(DBG)
+		{
+			printf("     : tryGetFile(): fopen failed with error %d: %s\n", errno, strerror(errno));
+		}
+		return false;
+	}
+	int numBytesToBeSaved = entryPtr->size;
+	int numBytesSaved = 0;
+
+	if(DBG)
+	{
+		printf("     : tryGetFile(): attempting to retrieve the file...\n");
+	}
+
+	// start the loop that writes the file
+	int i;
+	for( i=0; i<MAX_BLOCKS_PER_FILE; i++)
+	{
+		// retrieve the current block index
+		int dataBlockIdx = inodePtr->dataBlocks[i];
+		if( dataBlockIdx == -1)
+		{
+			// end of used blocks reached, break out of the loop
+			break;
+		}
+
+
+
+
+	}
+
+	// close the file since we're done with it
+	fclose(fp);
 
 	if(DBG)
   {

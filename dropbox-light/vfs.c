@@ -116,8 +116,10 @@ void handleDf( void );
 void handleList( void );
 void handlePut( char * );
 void handleDel( char * );
+void handleGet( char *, char * );
 bool tryPutFile( char *, char *, int );
 bool tryDelFile( struct DirectoryEntry * );
+bool tryGetFile( struct DirectoryEntry *, char * );
 void createDirectoryEntry( char *, int, int * );
 uint32_t getAmountOfFreeSpace( void );
 int getIndexOfNextFreeBlock( void );
@@ -240,7 +242,7 @@ int main( int argc, char *argv[] )
 
 		if( strcmp(command, "get") == 0)
 		{
-			//handleGet(tokens[1], tokens[2]);
+			handleGet(tokens[1], tokens[2]);
 			continue;
 		}
 
@@ -476,7 +478,6 @@ void handleList()
 	int i;
 	for( i=0; i<MAX_NUM_FILES; i++ )
 	{
-		//struct DirectoryEntry *dirEntry = &rootDirEntries[i];
 		if( rootDirEntries[i]->isValid )
 		{
 			// ensure for this iteration of the loop that we have teh orig max length value
@@ -602,10 +603,9 @@ void handleDel( char * fileToDel )
 		}
 	}
 
-	if(fileFound && fileDeleted)
+	if(fileFound && fileDeleted && DBG)
 	{
-		// the file was found and deleted, all is well, inform the user
-		printf("del: File deleted successfully.\n");
+		printf("     : handleDel(): file deleted\n");
 	}
 	else if(fileFound && !fileDeleted)
 	{
@@ -624,6 +624,69 @@ void handleDel( char * fileToDel )
   }
 	return;
 } // handleDel()
+
+void handleGet( char * fileToGet, char * newFilename )
+{
+	if(DBG)
+  {
+    printf("DEBUG: handleGet() starting...\n");
+  }
+
+	// ensure a file was specified, warn and bail if not
+	if(fileToGet == NULL || (strlen(fileToGet) == 0) )
+	{
+		printf("get error: Please enter a file name to get - ex. 'get foobar.txt'\n");
+		return;
+	}
+
+	// flag to set if a matching file name was found
+	bool fileFound = false;
+
+	// flag to set if the file was retrieved successfully
+	bool fileRetrieved = false;
+
+	int i;
+	for( i=0; i<MAX_NUM_FILES; i++ )
+	{
+		if( rootDirEntries[i]->isValid )
+		{
+			// check the name of the valid entry to see if it matches the user input
+			if( strcmp(fileToGet, rootDirEntries[i]->name) == 0 )
+			{
+				// set the flag
+				fileFound = true;
+
+				// try to get the file
+				fileRetrieved = tryGetFile(rootDirEntries[i], newFilename );
+
+				// break the loop since we found a file that matched
+				break;
+			}
+		}
+	}
+	
+	if(fileFound && fileRetrieved && DBG)
+	{
+		printf("     : handleGet(): file retrieved\n");
+	}
+	else if(fileFound && !fileRetrieved)
+	{
+		// the file was found, but it wasn't retrieved for some reason, alert the user
+		printf("get error: There was a problem getting the file. Please try again.\n");
+	}
+	else if(!fileFound)
+	{
+		// the file was not found, inform the user
+		printf("get error: File not found.\n");
+	}
+
+	if(DBG)
+  {
+    printf("DEBUG: handleGet() exiting...\n");
+  }
+	return;
+
+} // handleGet()
 
 bool tryPutFile( char * fileName, char * pathToFile, int fileSize )
 {
@@ -814,6 +877,59 @@ bool tryDelFile( struct DirectoryEntry * entryPtr )
 	return true;
 
 } // tryDelFile()
+
+bool tryGetFile( struct DirectoryEntry * entryPtr, char * newFilename )
+{
+	if(DBG)
+  {
+    printf("DEBUG: tryGetFile() starting...\n");
+  }
+
+	// set flag if user wants to rename the outgoing file
+	bool setNewFilename = false;
+	if(newFilename != NULL && strlen(newFilename) > 0 )
+	{
+		// set the flag to true if something at all was provided in the 2nd param
+		setNewFilename = true;
+	}
+
+	char * filename;
+	if(setNewFilename)
+	{
+		filename = newFilename;
+	}
+	else
+	{
+		filename = entryPtr->name;
+	}
+
+	// grab and store the current working directory
+	char * cwdBuf = NULL;
+	cwdBuf = getcwd(NULL, 0);
+
+	// build the entire file path, which gets sent to fopen later
+	char outFilePathAndName[ strlen(cwdBuf) + strlen(filename) +2 ];
+	strcpy(outFilePathAndName,cwdBuf);
+	strcat(outFilePathAndName,"/");
+	strcat(outFilePathAndName,filename);
+
+	if(DBG)
+	{
+		printf("     : tryGetFile(): file to write: %s\n", outFilePathAndName );
+	}
+
+	// done with provided cwdBuf, free it
+	free(cwdBuf);
+
+	if(DBG)
+  {
+    printf("DEBUG: tryGetFile() exiting...\n");
+  }
+
+	// if we got here, then everything above went fine, return successful
+	return true;
+
+} // tryGetFile()
 
 void createDirectoryEntry( char * name, int size, int blocks[] )
 {

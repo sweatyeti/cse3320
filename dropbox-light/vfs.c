@@ -603,9 +603,12 @@ void handleDel( char * fileToDel )
 		}
 	}
 
-	if(fileFound && fileDeleted && DBG)
+	if(fileFound && fileDeleted)
 	{
-		printf("     : handleDel(): file deleted\n");
+		if(DBG)
+		{
+			printf("     : handleDel(): file deleted\n");
+		}
 	}
 	else if(fileFound && !fileDeleted)
 	{
@@ -873,7 +876,7 @@ bool tryDelFile( struct DirectoryEntry * entryPtr )
 		printf("DEBUG: tryDelFile exiting...\n");
 	}
 
-	// if we got here, then everything above was succeesful, return true
+	// if we got here, then everything above was successful, return true
 	return true;
 
 } // tryDelFile()
@@ -934,12 +937,18 @@ bool tryGetFile( struct DirectoryEntry * entryPtr, char * newFilename )
 	{
 		if(DBG)
 		{
-			printf("     : tryGetFile(): fopen failed with error %d: %s\n", errno, strerror(errno));
+			printf("ERROR -> tryGetFile(): fopen failed with error %d: %s\n", errno, strerror(errno));
 		}
 		return false;
 	}
-	int numBytesToBeSaved = entryPtr->size;
+
+	// init the vars that help keep track of file writing
+	int fileSize = entryPtr->size;
+	int numBytesLeft = fileSize;
 	int numBytesSaved = 0;
+
+	// this flag gets set to true if the write is fully successful
+	bool writeSuccessful = false;
 
 	if(DBG)
 	{
@@ -952,27 +961,98 @@ bool tryGetFile( struct DirectoryEntry * entryPtr, char * newFilename )
 	{
 		// retrieve the current block index
 		int dataBlockIdx = inodePtr->dataBlocks[i];
-		if( dataBlockIdx == -1)
+
+		// check for bad scenario (shouldn't happen) when there are no more data blocks left,
+		// but we have not written the right amount of data
+		if( dataBlockIdx == -1 && numBytesSaved != fileSize )
 		{
-			// end of used blocks reached, break out of the loop
+			// if we get here, we need to bail out, set the flag and do so
+			writeSuccessful = false;
 			break;
 		}
 
+		int count = 0;
+		int numBytesToWrite = 0;
 
+		if( numBytesLeft <= BLOCK_SIZE )
+		{
+			numBytesToWrite = numBytesLeft;
+		}
+		else
+		{
+			numBytesToWrite = BLOCK_SIZE;
+		}
 
+		if(DBG)
+		{
+			printf("     : reading %d bytes from data block %d...\n", numBytesToWrite, dataBlockIdx);
+		}
+
+		clearerr(fp);
+		count = fwrite( vfs[dataBlockIdx], 1, numBytesToWrite, fp );
+
+		// check to see if the numbers don't match up or if there was an error in the stream
+		if( count != numBytesToWrite || ferror(fp) )
+		{
+			if(DBG)
+			{
+				printf("ERROR -> tryGetFile(): error while writing file, aborting\n");
+			}
+			// if there was an error, then set the flag and bail out
+			writeSuccessful = false;
+			break;
+		}
+
+		// update the vars used to track byte counts
+		numBytesSaved += count;
+		numBytesLeft -= count;
+
+		// check if we're finishing writing the file
+		if( numBytesSaved == fileSize && numBytesLeft == 0 )
+		{
+			// everything is good, set the flag and break out of the loop
+			writeSuccessful = true;
+			break;
+		}
 
 	}
 
 	// close the file since we're done with it
 	fclose(fp);
 
+	if(writeSuccessful)
+	{
+		if(DBG)
+		{
+			printf("     : tryGetFile(): file write successful\n");
+		}
+	}
+	else
+	{
+		// if something bad happened, then attempt to delete the file that was created
+		if(DBG)
+		{
+			printf("ERROR -> tryGetFile(): file write unsuccessful, deleting created file..\n");
+		}
+
+		// reset the errno, then attempt to delete the file
+		errno = 0;
+		remove(outFilePathAndName);
+
+		// not a big deal if the actual file wasn't deleted, only warn if debug output is enabled, 
+		// otherwise just keep going
+		if( errno != 0 && DBG )
+		{
+			printf("ERROR -> tryGetFile(): failed to delete corrupted file, error: %d: %s\n", errno, strerror(errno));
+		}
+	}
+	
 	if(DBG)
   {
     printf("DEBUG: tryGetFile() exiting...\n");
   }
 
-	// if we got here, then everything above went fine, return successful
-	return true;
+	return writeSuccessful;
 
 } // tryGetFile()
 

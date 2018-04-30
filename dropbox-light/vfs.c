@@ -100,15 +100,13 @@ struct inode
 
 }__attribute__((__packed__));
 
-// create a pointer to the root directory
+// create a pointer to the root directory, which is block 0. Since the array nam vfs degrades into
+// a pointer to the first element, we can use straight "vfs" to point to the root dir
 uint8_t (* rootDir)[BLOCK_SIZE] = vfs;
 
-// using the rootDir pointer (which itself is a pointer to the start of the file system memory),
-// declare an array of MAX_NUM_FILES DirectoryEntry structs to easily access any of the entries
+// using the rootDir pointer created above, declare an array of MAX_NUM_FILES DirectoryEntry structs to 
+// easily access any of the entries
 struct DirectoryEntry (* rootDirEntries)[MAX_NUM_FILES] = (struct DirectoryEntry (*)[MAX_NUM_FILES]) rootDir;
-//struct DirectoryEntry rootDirEntries[MAX_NUM_FILES] = (struct DirectoryEntry (*)[MAX_NUM_FILES]) rootDir;
-//struct DirectoryEntry (* rootDirEntries)[MAX_NUM_FILES] = NULL;
-//rootDirEntries = (struct DirectoryEntry (*)[MAX_NUM_FILES]) rootDir;
 
 // function declarations
 bool initVirtFS( void );
@@ -296,6 +294,19 @@ int main( int argc, char *argv[] )
 
 } // main
 
+/*
+ * function: 
+ *  initVirtFS
+ * 
+ * description: 
+ *  initializes the freeBlocks index and all the root directory entries and inodes as invalid
+ * 
+ * parameters:
+ *  none
+ * 
+ * returns: 
+ *  bool: true if there were no issues during initialization; false otherwise
+ */
 bool initVirtFS()
 {
 	if(DBG)
@@ -348,6 +359,21 @@ bool initVirtFS()
 
 } // initVirtFS()
 
+/*
+ * function: 
+ *  handlePut
+ * 
+ * description: 
+ *  takes the user input for the file to add to the FS and runs validations against it, such as 
+ *  ensuring it exists. First checks to ensure there is enough space and such available for 
+ *  the new file. If all is validated, then it calls tryPutFile() to perform the actual work. 
+ * 
+ * parameters:
+ *  char * fileToAdd: the name of the file, specified by the user input, to add to the FS
+ * 
+ * returns: 
+ *  void
+ */
 void handlePut( char * fileToAdd )
 {
 	if(DBG)
@@ -441,6 +467,19 @@ void handlePut( char * fileToAdd )
 	return;
 } // handlePut()
 
+/*
+ * function: 
+ *  handleDf
+ * 
+ * description: 
+ *  displays the amount of available space
+ * 
+ * parameters:
+ *  none
+ * 
+ * returns: 
+ *  void
+ */
 void handleDf()
 {
   if(DBG)
@@ -457,6 +496,19 @@ void handleDf()
 	return;
 } // handleDf()
 
+/*
+ * function: 
+ *  handleList
+ * 
+ * description: 
+ *  iterates through each DirectoryEntry and outputs the necessary info if the entry is valid 
+ * 
+ * parameters:
+ *  none
+ * 
+ * returns: 
+ *  void
+ */
 void handleList()
 {
   if(DBG)
@@ -561,6 +613,20 @@ void handleList()
 	return;
 } // handleList()
 
+/*
+ * function: 
+ *  handleDel
+ * 
+ * description: 
+ *  takes the user input for the file to remove from the FS and runs validations against it, such as 
+ *  ensuring it exists. If all is validated, then it calls tryDelFile() to perform the actual work. 
+ * 
+ * parameters:
+ *  char * fileToDel: the name of the file, specified by the user input, to remove from the FS
+ * 
+ * returns: 
+ *  void
+ */
 void handleDel( char * fileToDel )
 {
 	if(DBG)
@@ -628,6 +694,22 @@ void handleDel( char * fileToDel )
 	return;
 } // handleDel()
 
+/*
+ * function: 
+ *  handleGet
+ * 
+ * description: 
+ *  takes the user input(s) for the file to retrieve from the FS and runs validations against it,
+ *  such as ensuring it exists, and if a file can be created in the current working directory. 
+ *  If all is validated, then it calls tryPutFile() to perform the actual work. 
+ * 
+ * parameters:
+ *  char * fileToGet: the name of the file, specified by the user input, to download from the FS
+ *  char * newFilename: if specified, indicates the name of the output file
+ * 
+ * returns: 
+ *  void
+ */
 void handleGet( char * fileToGet, char * newFilename )
 {
 	if(DBG)
@@ -691,6 +773,22 @@ void handleGet( char * fileToGet, char * newFilename )
 
 } // handleGet()
 
+/*
+ * function: 
+ *  tryPutFile
+ * 
+ * description: 
+ *  tries to read the specified file from the host FS, and place it into the virtual
+ *  FS. Informs the caller whether or not it was successful via return bool. 
+ * 
+ * parameters:
+ *  char * fileName: the name of the file, specified by the user input, to add to the FS
+ *  char * pathToFile: the full path of the file (filename included)
+ *  int fileSize: the size of the file to put
+ * 
+ * returns: 
+ *  bool: true if the file was able to be put into the FS; false otherwise
+ */
 bool tryPutFile( char * fileName, char * pathToFile, int fileSize )
 {
 	if(DBG)

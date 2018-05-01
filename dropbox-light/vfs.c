@@ -100,13 +100,16 @@ struct inode
 
 }__attribute__((__packed__));
 
-// create a pointer to the root directory, which is block 0. Since the array nam vfs degrades into
+// create a pointer to the root directory, which is block 0. Since the array name vfs degrades into
 // a pointer to the first element, we can use straight "vfs" to point to the root dir
-uint8_t (* rootDir)[BLOCK_SIZE] = vfs;
+//uint8_t (* rootDir)[BLOCK_SIZE] = vfs;
+//uint8_t (* rootDir) = (uint8_t*)vfs[0];
 
-// using the rootDir pointer created above, declare an array of MAX_NUM_FILES DirectoryEntry structs to 
-// easily access any of the entries
-struct DirectoryEntry (* rootDirEntries)[MAX_NUM_FILES] = (struct DirectoryEntry (*)[MAX_NUM_FILES]) rootDir;
+// declare an array of pointers to DirectoryEntry structs to easily access any of the entries
+// the array itself starts at vfs[0], so the same memory essentially has two accessible names:
+// first name is vfs[0], second name is rootDirEntries
+//struct DirectoryEntry (* rootDirEntries)[MAX_NUM_FILES] = (struct DirectoryEntry (*)[MAX_NUM_FILES]) rootDir;
+struct DirectoryEntry (* rootDirEntries)[MAX_NUM_FILES] = (struct DirectoryEntry (*)[MAX_NUM_FILES]) vfs[0];
 
 // function declarations
 bool initVirtFS( void );
@@ -340,8 +343,8 @@ bool initVirtFS()
 	{
 		rootDirEntries[i]->isValid = false;
 		rootDirEntries[i]->inodeBlockIndex = i + INODE_BLOCKS_START;
-		struct inode * inodePtr = getInode(rootDirEntries[i]->inodeBlockIndex);
-		inodePtr->isValid = false;
+		//struct inode * inodePtr = getInode(rootDirEntries[i]->inodeBlockIndex);
+		//inodePtr->isValid = false;
 	}
 	if(DBG)
 	{
@@ -532,6 +535,11 @@ void handleList()
 	{
 		if( rootDirEntries[i]->isValid )
 		{
+			if(DBG)
+			{
+				printf("     : current entry %d valid value: %d\n", i, rootDirEntries[i]->isValid);
+			}	
+
 			// ensure for this iteration of the loop that we have teh orig max length value
 			dtMaxLength = 15;
 

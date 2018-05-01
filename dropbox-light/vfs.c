@@ -925,6 +925,21 @@ bool tryPutFile( char * fileName, char * pathToFile, int fileSize )
 
 } // tryPutFile()
 
+/*
+ * function: 
+ *  tryDelFile
+ * 
+ * description: 
+ *  tries to remove the file from the virtual FS, and free-up/invalidate the associated 
+ *  data blocks and directory entry. Informs the caller whether or not it was successful
+ *  via return bool. 
+ * 
+ * parameters:
+ *  struct DirectoryEntry * entryPtr: the entry representing the file to be deleted
+ * 
+ * returns: 
+ *  bool: true if the delete was successful; false otherwise
+ */
 bool tryDelFile( struct DirectoryEntry * entryPtr )
 {
 	if(DBG)
@@ -979,6 +994,21 @@ bool tryDelFile( struct DirectoryEntry * entryPtr )
 
 } // tryDelFile()
 
+/*
+ * function: 
+ *  tryGetFile
+ * 
+ * description: 
+ *  tries to retrieve the file from the virtual FS and save it to the host FS. 
+ *  Informs the caller whether or not it was successful via return bool. 
+ * 
+ * parameters:
+ *  struct DirectoryEntry * entryPtr: the entry representing the file to be retrieved
+ *  char * newFilename: if specified, represents the name to save the file as
+ * 
+ * returns: 
+ *  bool: true if the retrieval was successful; false otherwise
+ */
 bool tryGetFile( struct DirectoryEntry * entryPtr, char * newFilename )
 {
 	if(DBG)
@@ -1154,6 +1184,19 @@ bool tryGetFile( struct DirectoryEntry * entryPtr, char * newFilename )
 
 } // tryGetFile()
 
+/*
+ * function: 
+ *  createDirectoryEntry
+ * 
+ * description: 
+ *   
+ * 
+ * parameters:
+ *  
+ * 
+ * returns: 
+ *  void
+ */
 void createDirectoryEntry( char * name, int size, int blocks[] )
 {
 	if(DBG)

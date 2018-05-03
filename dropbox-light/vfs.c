@@ -1,6 +1,7 @@
 /*
  * Name: Matt Hamrick
  * ID: 1000433109
+ * Description: create a usable, an in-memory virtual file system which files can be saved to, removed from, retrieved from, and listed 
  */
 
 /* The MIT License (MIT)
@@ -100,15 +101,9 @@ struct inode
 
 }__attribute__((__packed__));
 
-// create a pointer to the root directory, which is block 0. Since the array name vfs degrades into
-// a pointer to the first element, we can use straight "vfs" to point to the root dir
-//uint8_t (* rootDir)[BLOCK_SIZE] = vfs;
-//uint8_t (* rootDir) = (uint8_t*)vfs[0];
-
 // declare an array of pointers to DirectoryEntry structs to easily access any of the entries
 // the array itself starts at vfs[0], so the same memory essentially has two accessible names:
 // first name is vfs[0], second name is rootDirEntries
-//struct DirectoryEntry (* rootDirEntries)[MAX_NUM_FILES] = (struct DirectoryEntry (*)[MAX_NUM_FILES]) rootDir;
 struct DirectoryEntry (* rootDirEntries)[MAX_NUM_FILES] = (struct DirectoryEntry (*)[MAX_NUM_FILES]) vfs[0];
 
 // function declarations
@@ -271,9 +266,9 @@ int main( int argc, char *argv[] )
 			continue;
 		}
 
+		// custom, undocumented command to enable/disable debug output on the fly
 		if( strcmp(command, "dbg") == 0)
 		{
-			// enable or disable dbg output
 			DBG = !DBG;
 			printf("Debug output ");
 			if(DBG)
@@ -490,6 +485,8 @@ void handleDf()
     printf("DEBUG: handleDf() starting...\n");
   }
 
+	// this function doesn't really do any work, there's already a function that
+	// calculates the amount of free space, so output that amount directly
 	printf("%d bytes free.\n", getAmountOfFreeSpace());
 
   if(DBG)
@@ -1032,7 +1029,10 @@ bool tryGetFile( struct DirectoryEntry * entryPtr, char * newFilename )
 		setNewFilename = true;
 	}
 
+	// create var to hold the actual name of the output file
 	char * filename;
+
+	// the filename gets initialized to either the original file name, or the user's desired new name
 	if(setNewFilename)
 	{
 		filename = newFilename;
@@ -1197,10 +1197,13 @@ bool tryGetFile( struct DirectoryEntry * entryPtr, char * newFilename )
  *  createDirectoryEntry
  * 
  * description: 
- *   
+ *  populates the next free DirectoryEntry's info with and the associated inode when a 
+ *  file is placed into the FS
  * 
  * parameters:
- *  
+ *  char * name: the name of the entry in teh FS
+ *  int size: the size of the file
+ *  int blocks[]: array containing the data blocks used by the file
  * 
  * returns: 
  *  void
@@ -1212,8 +1215,10 @@ void createDirectoryEntry( char * name, int size, int blocks[] )
 		printf("DEBUG: createDirectoryEntry() starting...\n");
 	}
 
+	// get the index of the next free DirectoryEntry in the FS
 	int idx = getIndexOfNextFreeDirEntry();
 
+	// if we got -1 back, which shouldn't happen, then die
 	if(idx == -1)
 	{
 		printf("There was a problem and the program needs to exit.\n");
@@ -1230,9 +1235,16 @@ void createDirectoryEntry( char * name, int size, int blocks[] )
 		printf("     : createDirectoryEntry(): assigning entry values...");
 	}
 
+	// set the appropriate entry's data, starting with the provided file name
 	strcpy( rootDirEntries[idx]->name, name );
+
+	// store the file's size, retrieved from the file's stats
 	rootDirEntries[idx]->size = size;
+
+	// mark the entry as valid
 	rootDirEntries[idx]->isValid = true;
+
+	// retrieve the time offset of this moment
 	rootDirEntries[idx]->offsetTimeAdded = time(NULL);
 	
 	if(DBG)
@@ -1240,6 +1252,7 @@ void createDirectoryEntry( char * name, int size, int blocks[] )
 		printf("done\n");
 	}
 
+	// retrieve the associated inode for this particular DirectoryEntry
 	struct inode * inodePtr = getInode(rootDirEntries[idx]->inodeBlockIndex);
 
 	if(DBG)
@@ -1247,6 +1260,7 @@ void createDirectoryEntry( char * name, int size, int blocks[] )
 		printf("     : createDirectoryEntry(): assigning inode values...");
 	}
 
+	// mark the inode as valid
 	inodePtr->isValid = true;
 
 	// copy the used data blocks for the temp blocks array into the memory inside the fs
@@ -1268,6 +1282,20 @@ void createDirectoryEntry( char * name, int size, int blocks[] )
 	return;
 } // createDirectoryEntry()
 
+/*
+ * function: 
+ *  getAmountOfFreeSpace
+ * 
+ * description: 
+ *  iterates through teh freeBlocks index array and increments a counter if the block is free;
+ *  once the loop is finished, it returns the product of the counter and BLOCK_SIZE 
+ * 
+ * parameters:
+ *  none
+ * 
+ * returns: 
+ *  uint32_t: the # of free blocks * the BLOCK_SIZE, in bytes - aka the amount of free space
+ */
 uint32_t getAmountOfFreeSpace()
 {
 	if(DBG)
@@ -1299,6 +1327,20 @@ uint32_t getAmountOfFreeSpace()
 
 } // getAmountOfFreeSpace()
 
+/*
+ * function: 
+ *  getIndexOfNextFreeBlock
+ * 
+ * description: 
+ *  iterates through the freeBlocks index array from the beginning and returns the next 
+ *  free block index
+ * 
+ * parameters:
+ *  none
+ * 
+ * returns: 
+ *  int: the index of the next free block
+ */
 int getIndexOfNextFreeBlock()
 {
 	if(DBG)
@@ -1328,6 +1370,20 @@ int getIndexOfNextFreeBlock()
 
 } // getIndexOfNextFreeBlock()
 
+/*
+ * function: 
+ *  getIndexOfNextFreeDirEntry
+ * 
+ * description: 
+ *  iterates through each DirectoryEntry from the beginning and checks if it's valid (used)
+ *  or not valid (unused), and returns the index of the first unused/free one
+ * 
+ * parameters:
+ *  none
+ * 
+ * returns: 
+ *  int: the index of the first free DirectoryEntry
+ */
 int getIndexOfNextFreeDirEntry()
 {
 	if(DBG)
@@ -1361,6 +1417,19 @@ int getIndexOfNextFreeDirEntry()
 
 } // getIndexOfNextFreeDirEntry()
 
+/*
+ * function: 
+ *  getInode
+ * 
+ * description: 
+ *  given a DirectoryEntry index, returns a pointer to the associated inode
+ * 
+ * parameters:
+ *  uint8_t entry: the index of the entry to retrieve the inode for
+ * 
+ * returns: 
+ *  struct inode *: a pointer to the appropriate inode
+ */
 struct inode * getInode( uint8_t entry )
 {
 	if(DBG)
@@ -1368,14 +1437,18 @@ struct inode * getInode( uint8_t entry )
 		printf("DEBUG: getInode() starting...\n");
 	}
 
+	// instantiate the pointer and initialize to NULL
 	struct inode * ptr = NULL;
 
+	// get the address  of the appropriate inode block, cast it to the inode *, and set the var
 	ptr = (struct inode *) &vfs[INODE_BLOCKS_START + entry];
 
 	if(DBG)
 	{
 		printf("DEBUG: getInode() exiting...\n");
 	}
+
+	// return the ptr, it points directly to the right spot in the virtual FS
 	return ptr;
 
 } //getInode()
